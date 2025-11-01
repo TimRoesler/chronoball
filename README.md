@@ -44,6 +44,5 @@
 ## 🧑‍💻 Author
 
 - **TimRoesler**
-
-
+- **DISCLAIMER: This module was created with the assistance of Claude, an AI developed by Anthropic.**
 
