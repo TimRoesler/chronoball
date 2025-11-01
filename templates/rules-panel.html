@@ -1,0 +1,167 @@
+<form class="chronoball-rules-panel-content">
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.Endzones"}}</h3>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.ZoneATile"}}</label>
+      <input type="text" name="zoneATileId" value="{{rules.zoneATileId}}" placeholder="Tile UUID">
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.ZoneBTile"}}</label>
+      <input type="text" name="zoneBTileId" value="{{rules.zoneBTileId}}" placeholder="Tile UUID">
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.MovementLimits"}}</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.BallMove"}}</label>
+        <input type="number" name="ballMove" value="{{rules.ballMove}}" min="0">
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.BallThrow"}}</label>
+        <input type="number" name="ballThrow" value="{{rules.ballThrow}}" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.LegacyTotal"}}</label>
+      <input type="number" name="legacyTotal" value="{{rules.legacyTotal}}" min="0">
+      <p class="notes">{{localize "CHRONOBALL.RulesPanel.LegacyNote"}}</p>
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.DCScaling"}}</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.BaseDC"}}</label>
+        <input type="number" name="baseDC" value="{{rules.baseDC}}" min="0">
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.StepDistance"}}</label>
+        <input type="number" name="stepDistance" value="{{rules.stepDistance}}" min="1">
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.DCIncrease"}}</label>
+        <input type="number" name="dcIncrease" value="{{rules.dcIncrease}}" min="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.ThrowingSkills"}}</h3>
+    <div class="form-group skill-checkboxes">
+      <label>{{localize "CHRONOBALL.RulesPanel.AvailableSkills"}}</label>
+      <div class="skill-grid">
+        {{#each dndSkills as |skill|}}
+        <label class="skill-checkbox">
+          <input type="checkbox" name="skills.{{skill.id}}" {{#if skill.checked}}checked{{/if}}>
+          {{skill.label}}
+        </label>
+        {{/each}}
+      </div>
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.Interception"}}</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.InterceptRadius"}}</label>
+        <input type="number" name="interceptRadius" value="{{rules.interceptRadius}}" min="0">
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.InterceptTimeout"}}</label>
+        <input type="number" name="interceptTimeout" value="{{rules.interceptTimeout}}" min="1000" step="1000">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>
+        <input type="checkbox" name="interceptOnThrow" {{#if rules.interceptOnThrow}}checked{{/if}}>
+        {{localize "CHRONOBALL.RulesPanel.InterceptOnThrow"}}
+      </label>
+    </div>
+    <div class="form-group">
+      <label>
+        <input type="checkbox" name="blockAtReceiver" {{#if rules.blockAtReceiver}}checked{{/if}}>
+        {{localize "CHRONOBALL.RulesPanel.BlockAtReceiver"}}
+      </label>
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.CarrierOptions"}}</h3>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.TempHP"}}</label>
+      <input type="number" name="carrierTempHP" value="{{rules.carrierTempHP}}" min="0">
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.AuraSource"}}</label>
+      <input type="text" name="carrierAuraSource" value="{{rules.carrierAuraSource}}" placeholder="Path to image/video">
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.AuraScale"}}</label>
+      <input type="number" name="carrierAuraScale" value="{{rules.carrierAuraScale}}" min="0.1" step="0.1">
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.BallToken"}}</h3>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.BallTexture"}}</label>
+      <input type="text" name="ballTexture" value="{{rules.ballTexture}}" placeholder="Path to texture">
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.BallScale"}}</label>
+      <input type="number" name="ballScale" value="{{rules.ballScale}}" min="0.1" step="0.1">
+    </div>
+  </div>
+
+  <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.Scoring"}}</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.ScoreRunIn"}}</label>
+        <input type="number" name="scoreRunIn" value="{{rules.scoreRunIn}}" min="0">
+        <p class="notes">{{localize "CHRONOBALL.RulesPanel.ScoreRunInHint"}}</p>
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.ScoreThrow"}}</label>
+        <input type="number" name="scoreThrow" value="{{rules.scoreThrow}}" min="0">
+        <p class="notes">{{localize "CHRONOBALL.RulesPanel.ScoreThrowHint"}}</p>
+      </div>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.ScorePassInZone"}}</label>
+        <input type="number" name="scorePassInZone" value="{{rules.scorePassInZone}}" min="0">
+        <p class="notes">{{localize "CHRONOBALL.RulesPanel.ScorePassInZoneHint"}}</p>
+      </div>
+    </div>
+  </div>
+
+    <div class="rules-section">
+      <h3>{{localize "CHRONOBALL.RulesPanel.FumbleMechanic"}}</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>{{localize "CHRONOBALL.RulesPanel.FumbleStartDC"}}</label>
+          <input type="number" name="fumbleStartDC" value="{{rules.fumbleStartDC}}" min="0">
+          <p class="notes">{{localize "CHRONOBALL.RulesPanel.FumbleStartDCHint"}}</p>
+        </div>
+        
+        <div class="form-group">
+          <label>{{localize "CHRONOBALL.RulesPanel.FumbleDamageThreshold"}}</label>
+          <input type="number" name="fumbleDamageThreshold" value="{{rules.fumbleDamageThreshold}}" min="1">
+          <p class="notes">{{localize "CHRONOBALL.RulesPanel.FumbleDamageThresholdHint"}}</p>
+        </div>
+  
+        <div class="form-group">
+          <label>{{localize "CHRONOBALL.RulesPanel.FumbleDCIncrease"}}</label>
+          <input type="number" name="fumbleDCIncrease" value="{{rules.fumbleDCIncrease}}" min="0">
+          <p class="notes">{{localize "CHRONOBALL.RulesPanel.FumbleDCIncreaseHint"}}</p>
+        </div>
+      </div>
+    </div>
+  <div class="button-group">
+    <button type="button" class="save-rules">{{localize "CHRONOBALL.RulesPanel.Save"}}</button>
+    <button type="button" class="reset-rules">{{localize "CHRONOBALL.RulesPanel.Reset"}}</button>
+  </div>
+</form>

@@ -1,0 +1,57 @@
+<div class="chronoball-player-panel-content">
+  <div class="form-group">
+    <label>{{localize "CHRONOBALL.PlayerPanel.TeamNames"}}</label>
+    <input type="text" name="teamAName" value="{{state.teamAName}}" placeholder="{{localize "CHRONOBALL.PlayerPanel.TeamAName"}}">
+    <input type="text" name="teamBName" value="{{state.teamBName}}" placeholder="{{localize "CHRONOBALL.PlayerPanel.TeamBName"}}">
+  </div>
+  
+  <div class="section-divider"></div>
+  
+  <div class="roster-section">
+    <h3>{{localize "CHRONOBALL.PlayerPanel.Rosters"}} - Team A ({{rosters.teamA.length}}/{{maxPlayersPerTeam}})</h3>
+    <div class="roster-list">
+      {{#if rosters.teamA.length}}
+        {{#each rosters.teamA}}
+          <div class="roster-player">{{this.name}}</div>
+        {{/each}}
+      {{else}}
+        <div class="roster-empty">{{localize "CHRONOBALL.PlayerPanel.NoPlayers"}}</div>
+      {{/if}}
+    </div>
+  </div>
+  
+  <div class="roster-section">
+    <h3>{{localize "CHRONOBALL.PlayerPanel.Rosters"}} - Team B ({{rosters.teamB.length}}/{{maxPlayersPerTeam}})</h3>
+    <div class="roster-list">
+      {{#if rosters.teamB.length}}
+        {{#each rosters.teamB}}
+          <div class="roster-player">{{this.name}}</div>
+        {{/each}}
+      {{else}}
+        <div class="roster-empty">{{localize "CHRONOBALL.PlayerPanel.NoPlayers"}}</div>
+      {{/if}}
+    </div>
+  </div>
+  
+  <div class="section-divider"></div>
+  
+  <div class="button-group">
+    <button type="button" class="set-carrier">{{localize "CHRONOBALL.PlayerPanel.SetCarrier"}}</button>
+    <button type="button" class="clear-carrier">{{localize "CHRONOBALL.PlayerPanel.ClearCarrier"}}</button>
+  </div>
+  
+  <div class="button-group">
+    <button type="button" class="determine-teams">{{localize "CHRONOBALL.PlayerPanel.DetermineTeams"}}</button>
+    <button type="button" class="start-match">Start Match</button>
+  </div>
+  
+  <div class="button-group">
+    <button type="button" class="end-match" style="background: #d32f2f; color: white;">{{localize "CHRONOBALL.PlayerPanel.EndMatch"}}</button>
+  </div>
+  
+  <div class="section-divider"></div>
+  
+  <div class="button-group">
+    <button type="button" class="save-settings">{{localize "CHRONOBALL.PlayerPanel.Save"}}</button>
+  </div>
+</div>
