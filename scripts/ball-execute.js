@@ -3,6 +3,7 @@
  */
 
 import { ChronoballState } from './state.js';
+import { ChronoballSocket } from './socket.js';
 import { ChronoballChat } from './chat.js';
 import { ChronoballUtils, ANIMATION_DURATION_MS, SCORE_DELAY_MS } from './utils.js';
 import { ChronoballScoring } from './scoring.js';
@@ -14,18 +15,18 @@ export class ChronoballBallExecute {
   // === Authoritative execution methods (called by socket) ===
 
   static async executeThrow(tokenId, targetX, targetY, skill, distance, dc, rollTotal, success, modification) {
-    const token = canvas.tokens.get(tokenId);
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
     if (!token) return;
 
     const rules = ChronoballState.getRules();
 
     // Get or create ball token at carrier position
-    let ballToken = ChronoballState.getBallToken();
+    let ballToken = ChronoballState.getBallTokenDoc();
 
     // If ball doesn't exist (was deleted when picked up), create it temporarily at carrier
     if (!ballToken) {
       await this.recreateBallToken(token.x, token.y);
-      ballToken = ChronoballState.getBallToken();
+      ballToken = ChronoballState.getBallTokenDoc();
     }
 
     if (!ballToken) {
@@ -34,7 +35,7 @@ export class ChronoballBallExecute {
     }
 
     // Adjust for token center
-    const gridSize = canvas.grid.size;
+    const gridSize = ChronoballUtils.getMatchGrid().size;
     const adjustedX = targetX - (gridSize / 2);
     const adjustedY = targetY - (gridSize / 2);
 
@@ -63,16 +64,20 @@ export class ChronoballBallExecute {
           .duration(ANIMATION_DURATION_MS)
           .waitUntilFinished(-1);
 
-        await sequence.play();
+        try {
+          await sequence.play();
+        } catch (e) {
+          ChronoballUtils.log('Chronoball | Sequencer play failed (host viewing another scene?), continuing:', e);
+        }
         ChronoballUtils.log('Chronoball | Sequencer animation completed');
 
-        await ballToken.document.update({ x: adjustedX, y: adjustedY }, { chronoball_internal: true });
+        await ballToken.update({ x: adjustedX, y: adjustedY }, { chronoball_internal: true });
         ChronoballUtils.log('Chronoball | Ball position updated to target');
       } else {
         // Fallback: Move ball instantly if Sequencer not available
         ChronoballUtils.log('Chronoball | Sequencer not active, moving ball instantly');
         if (ballToken) {
-          await ballToken.document.update({ x: adjustedX, y: adjustedY }, { chronoball_internal: true });
+          await ballToken.update({ x: adjustedX, y: adjustedY }, { chronoball_internal: true });
         }
       }
 
@@ -85,7 +90,7 @@ export class ChronoballBallExecute {
       ChronoballUtils.log('Chronoball | throwInProgress flag set to FALSE');
 
       // Check for scoring (ball landed in endzone) AFTER animation and delay
-      const scored = await ChronoballScoring.checkThrowScore(ballToken.document, adjustedX, adjustedY);
+      const scored = await ChronoballScoring.checkThrowScore(ballToken, adjustedX, adjustedY);
 
       // Create chat message
       await this.createThrowChatMessage(token, distance, distance, dc, rollTotal, true, scored, modification);
@@ -135,14 +140,18 @@ export class ChronoballBallExecute {
           .duration(ANIMATION_DURATION_MS)
           .waitUntilFinished(-1);
 
-        await sequence.play();
+        try {
+          await sequence.play();
+        } catch (e) {
+          ChronoballUtils.log('Chronoball | Sequencer play failed (host viewing another scene?), continuing:', e);
+        }
         ChronoballUtils.log('Chronoball | Sequencer animation completed');
 
-        await ballToken.document.update({ x: actualX, y: actualY }, { chronoball_internal: true });
+        await ballToken.update({ x: actualX, y: actualY }, { chronoball_internal: true });
       } else {
         // Fallback: Move ball instantly
         if (ballToken) {
-          await ballToken.document.update({ x: actualX, y: actualY }, { chronoball_internal: true });
+          await ballToken.update({ x: actualX, y: actualY }, { chronoball_internal: true });
         }
       }
 
@@ -154,7 +163,7 @@ export class ChronoballBallExecute {
       ChronoballUtils.log('Chronoball | throwInProgress flag set to FALSE');
 
       // Check for scoring even on failed throw (might still land in endzone)
-      const scored = await ChronoballScoring.checkThrowScore(ballToken.document, actualX, actualY);
+      const scored = await ChronoballScoring.checkThrowScore(ballToken, actualX, actualY);
 
       // Create chat message
       await this.createThrowChatMessage(token, distance, achievedDistance, dc, rollTotal, false, scored, modification);
@@ -171,19 +180,19 @@ export class ChronoballBallExecute {
   }
 
   static async executePass(tokenId, targetTokenId, skill, distance, dc, rollTotal, success, modification) {
-    const token = canvas.tokens.get(tokenId);
-    const targetToken = canvas.tokens.get(targetTokenId);
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
+    const targetToken = ChronoballState.getMatchTokenDoc(targetTokenId);
     if (!token || !targetToken) return;
 
     const rules = ChronoballState.getRules();
 
     // Get or create ball token at carrier position
-    let ballToken = ChronoballState.getBallToken();
+    let ballToken = ChronoballState.getBallTokenDoc();
 
     // If ball doesn't exist (was deleted when picked up), create it temporarily at carrier
     if (!ballToken) {
       await this.recreateBallToken(token.x, token.y);
-      ballToken = ChronoballState.getBallToken();
+      ballToken = ChronoballState.getBallTokenDoc();
     }
 
     if (success) {
@@ -206,14 +215,18 @@ export class ChronoballBallExecute {
           .duration(ANIMATION_DURATION_MS) // 1.5 seconds
           .waitUntilFinished();
 
-        await sequence.play();
+        try {
+          await sequence.play();
+        } catch (e) {
+          ChronoballUtils.log('Chronoball | Sequencer play failed (host viewing another scene?), continuing:', e);
+        }
 
         // Update final position
-        await ballToken.document.update({ x: targetX, y: targetY }, { chronoball_internal: true });
+        await ballToken.update({ x: targetX, y: targetY }, { chronoball_internal: true });
       } else {
         // Fallback: Move token instantly
         if (ballToken) {
-          await ballToken.document.update({ x: targetX, y: targetY }, { chronoball_internal: true });
+          await ballToken.update({ x: targetX, y: targetY }, { chronoball_internal: true });
         }
       }
 
@@ -234,18 +247,18 @@ export class ChronoballBallExecute {
       // No interception - receiver gets ball normally
       // Delete ball token and set receiver as carrier
       if (ballToken) {
-        await ballToken.document.delete();
+        await ballToken.delete();
         await ChronoballState.updateState({ ballTokenId: null });
       }
 
       // Clear old carrier and set new carrier
       await ChronoballCarrier.executeClearCarrier();
-      await ChronoballCarrier.executeSetCarrier(targetTokenId);
+      await ChronoballSocket.executeAsGM('setCarrier', { tokenId: targetTokenId });
 
       // Check if receiver is in target endzone (for pass-in-zone score)
       const state = ChronoballState.getMatchState();
-      const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBTileId : rules.zoneATileId;
-      const receiverInEndzone = ChronoballState.isTokenCenterInTile(targetToken.document, targetToken.x, targetToken.y, targetZoneId);
+      const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBRegionId : rules.zoneARegionId;
+      const receiverInEndzone = ChronoballState.isTokenCenterInRegion(targetToken, targetToken.x, targetToken.y, targetZoneId);
 
       // If receiver caught in endzone, award pass-in-zone score
       if (receiverInEndzone) {
@@ -289,12 +302,16 @@ export class ChronoballBallExecute {
           .duration(ANIMATION_DURATION_MS)
           .waitUntilFinished();
 
-        await sequence.play();
+        try {
+          await sequence.play();
+        } catch (e) {
+          ChronoballUtils.log('Chronoball | Sequencer play failed (host viewing another scene?), continuing:', e);
+        }
 
-        await ballToken.document.update({ x: actualX, y: actualY }, { chronoball_internal: true });
+        await ballToken.update({ x: actualX, y: actualY }, { chronoball_internal: true });
       } else {
         if (ballToken) {
-          await ballToken.document.update({ x: actualX, y: actualY }, { chronoball_internal: true });
+          await ballToken.update({ x: actualX, y: actualY }, { chronoball_internal: true });
         } else {
           await this.recreateBallToken(actualX, actualY);
         }
@@ -308,7 +325,7 @@ export class ChronoballBallExecute {
       ChronoballUtils.log('Chronoball | throwInProgress flag set to FALSE (failed pass)');
 
       // Check for scoring even on failed pass (might still land in endzone)
-      const scored = await ChronoballScoring.checkThrowScore(ballToken?.document, actualX, actualY);
+      const scored = await ChronoballScoring.checkThrowScore(ballToken ?? null, actualX, actualY);
 
       // Create chat message
       await this.createPassChatMessage(token, targetToken, distance, dc, rollTotal, false, achievedDistance, false, false, false, modification);
@@ -349,14 +366,14 @@ export class ChronoballBallExecute {
   }
 
   static async executePickup(tokenId) {
-    // Ensure this runs as GM
-    if (!game.user.isGM) {
-      console.error('Chronoball | executePickup called by non-GM, this should not happen!');
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
+    if (!token) return;
+
+    // Ensure this runs as authorized executor (GM/Host, or owner if no GM online)
+    if (!ChronoballSocket.isAuthorizedExecutor(token)) {
+      console.error('Chronoball | executePickup called by unauthorized user!');
       return;
     }
-
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
 
     const state = ChronoballState.getMatchState();
 
@@ -382,9 +399,9 @@ export class ChronoballBallExecute {
       await ChronoballCarrier.executeSetCarrier(tokenId);
 
       // Delete the ball token (carrier has the ball now)
-      const ballToken = ChronoballState.getBallToken();
+      const ballToken = ChronoballState.getBallTokenDoc();
       if (ballToken) {
-        await ballToken.document.delete();
+        await ballToken.delete();
         // Clear the ball token ID from state (will be recreated when thrown/dropped)
         await ChronoballState.updateState({ ballTokenId: null });
       }
@@ -397,22 +414,22 @@ export class ChronoballBallExecute {
   }
 
   static async executeDrop(tokenId, dropX, dropY) {
-    // Ensure this runs as GM
-    if (!game.user.isGM) {
-      console.error('Chronoball | executeDrop called by non-GM, this should not happen!');
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
+    if (!token) return;
+
+    // Ensure this runs as authorized executor (GM/Host, or owner if no GM online)
+    if (!ChronoballSocket.isAuthorizedExecutor(token)) {
+      console.error('Chronoball | executeDrop called by unauthorized user!');
       return;
     }
-
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
 
     let ballX = token.x;
     let ballY = token.y;
 
     if (dropX !== undefined && dropY !== undefined) {
       // The ball is always 1x1 grid units, so its dimensions are the grid size.
-      const ballPixelWidth = canvas.grid.size;
-      const ballPixelHeight = canvas.grid.size;
+      const ballPixelWidth = ChronoballUtils.getMatchGrid().size;
+      const ballPixelHeight = ballPixelWidth;
 
       // Adjust clicked position to be the top-left corner for centering the ball
       ballX = dropX - (ballPixelWidth / 2);
@@ -436,18 +453,20 @@ export class ChronoballBallExecute {
   }
 
   static async executeFumble(tokenId) {
-    if (!game.user.isGM) {
-      console.error('Chronoball | executeFumble called by non-GM, this should not happen!');
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
+    if (!token) return;
+
+    // Ensure this runs as authorized executor (GM/Host, or owner if no GM online)
+    if (!ChronoballSocket.isAuthorizedExecutor(token)) {
+      console.error('Chronoball | executeFumble called by unauthorized user!');
       return;
     }
 
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
-
     // --- Scatterball Logic ---
     const scatterRadiusFeet = 5;
-    const gridSize = canvas.grid.size;
-    const gridDistance = canvas.grid.distance;
+    const grid = ChronoballUtils.getMatchGrid();
+    const gridSize = grid.size;
+    const gridDistance = grid.distance;
     const scatterRadiusPixels = (scatterRadiusFeet / gridDistance) * gridSize;
 
     // Get a random angle and distance
@@ -512,7 +531,7 @@ export class ChronoballBallExecute {
       lockRotation: true
     });
 
-    const createdTokens = await canvas.scene.createEmbeddedDocuments('Token', [tokenData]);
+    const createdTokens = await ChronoballUtils.getMatchScene().createEmbeddedDocuments('Token', [tokenData]);
 
     if (createdTokens && createdTokens.length > 0) {
       await ChronoballState.setBallToken(createdTokens[0].id);
@@ -530,29 +549,29 @@ export class ChronoballBallExecute {
     const state = ChronoballState.getMatchState();
 
     // Determine zone based on attacking team (not hardcoded to Zone A)
-    const attackingZoneId = state.attackingTeam === 'A' ? rules.zoneATileId : rules.zoneBTileId;
+    const attackingZoneId = state.attackingTeam === 'A' ? rules.zoneARegionId : rules.zoneBRegionId;
     if (!attackingZoneId) {
       ui.notifications.error(game.i18n.localize('CHRONOBALL.Errors.ZoneANotFound'));
       return;
     }
 
-    const zoneTileIdOnly = attackingZoneId.split('.').pop();
-    const zoneTile = canvas.tiles.get(zoneTileIdOnly);
-    if (!zoneTile) {
+    const matchScene = ChronoballUtils.getMatchScene();
+    const zoneRegion = ChronoballState.getZoneRegion(attackingZoneId, matchScene);
+    if (!zoneRegion) {
       ui.notifications.error(game.i18n.localize('CHRONOBALL.Errors.ZoneANotFound'));
       return;
     }
 
-    // Calculate center of zone
-    const bounds = zoneTile.bounds;
+    // Calculate center of zone from the region bounds
+    const bounds = zoneRegion.bounds;
     const centerX = bounds.x + (bounds.width / 2);
     const centerY = bounds.y + (bounds.height / 2);
-    const gridSize = canvas.grid.size;
+    const gridSize = matchScene.grid.size;
     const tokenX = centerX - (gridSize / 2);
     const tokenY = centerY - (gridSize / 2);
 
     // Check if ball token already exists
-    let ballToken = ChronoballState.getBallToken();
+    let ballToken = ChronoballState.getBallTokenDoc();
 
     if (!ballToken) {
       const ballActor = await ChronoballState.getOrCreateBallActor();
@@ -575,7 +594,7 @@ export class ChronoballBallExecute {
         lockRotation: true
       });
 
-      const [createdToken] = await canvas.scene.createEmbeddedDocuments('Token', [tokenData]);
+      const [createdToken] = await matchScene.createEmbeddedDocuments('Token', [tokenData]);
       if (createdToken) {
         await ChronoballState.setBallToken(createdToken.id);
         ui.notifications.info(game.i18n.localize('CHRONOBALL.Notifications.BallTokenCreated'));
@@ -584,7 +603,7 @@ export class ChronoballBallExecute {
       }
     } else {
       // Ball exists, move it to attacking team's zone center
-      await ballToken.document.update({ x: tokenX, y: tokenY });
+      await ballToken.update({ x: tokenX, y: tokenY });
     }
   }
 
@@ -624,27 +643,28 @@ export class ChronoballBallExecute {
       });
 
       // Clear carrier (if exists)
-      const carrier = ChronoballState.getCarrierToken();
+      const carrier = ChronoballState.getCarrierTokenDoc();
       if (carrier) {
         await ChronoballCarrier.executeClearCarrier();
       }
 
-      // Delete ALL Chronoball tokens on the scene
-      const chronoballTokens = canvas.tokens.placeables.filter(t => t.actor?.name === 'Chronoball');
-      for (const token of chronoballTokens) {
-        await token.document.delete();
+      // Delete ALL Chronoball tokens on the match scene
+      const matchScene = ChronoballUtils.getMatchScene();
+      const chronoballTokens = matchScene
+        ? matchScene.tokens.filter(td => td.actor?.name === 'Chronoball')
+        : [];
+      for (const tokenDoc of chronoballTokens) {
+        await tokenDoc.delete();
       }
 
-      // Clear match active flag on scene
-      await canvas.scene.unsetFlag('chronoball', 'matchActive');
+      // Clear match active flag on Ball Actor
+      const ballActor = ChronoballState.getBallActor();
+      if (ballActor) {
+        await ballActor.unsetFlag('chronoball', 'matchActiveSceneId');
+      }
 
-      // Reset match state BEFORE deleting combat
+      // Reset match state
       await ChronoballState.resetState();
-
-      // End combat
-      if (game.combat) {
-        await game.combat.delete();
-      }
 
       ui.notifications.info(game.i18n.localize('CHRONOBALL.Notifications.MatchEnded'));
       const { ChronoballSocket } = await import('./socket.js');

@@ -22,8 +22,20 @@ export class ChronoballSocket {
    * Handle incoming socket messages
    */
   static async onSocketMessage(data) {
+    // Socket messages can arrive during world load, before game.actors / game.users /
+    // canvas are initialized. Defer processing until the game is fully ready so handlers
+    // (HUD render, isPrimaryGM, token lookups) don't read undefined collections.
+    if (!game.ready) {
+      Hooks.once('ready', () => this.onSocketMessage(data));
+      return;
+    }
     ChronoballUtils.log('Chronoball | Socket message received:', data);
-    const { action, targetUserId } = data;
+    const { action, targetUserId, _targetUserId } = data;
+
+    // Route targeted socket messages: ignore if we are not the target user
+    if (_targetUserId && _targetUserId !== game.user.id) {
+      return;
+    }
 
     // Route broadcast messages: show dialog only if this client controls the token
     if (!targetUserId) {
@@ -51,8 +63,18 @@ export class ChronoballSocket {
     const ChronoballFumble = (await import('./fumble.js')).ChronoballFumble;
 
     switch (action) {
-      case 'stateChanged':
+      case 'stateChanged': {
+        const { ChronoballState } = await import('./state.js');
+        ChronoballState._matchState = data.newState;
         return Hooks.callAll('chronoball.stateChanged', data.newState);
+      }
+      case 'requestStateSync': {
+        if (this.isPrimaryGM()) {
+          const { ChronoballState } = await import('./state.js');
+          this.emit('stateChanged', { newState: ChronoballState.getMatchState() });
+        }
+        return;
+      }
       case 'actionComplete':
         return Hooks.callAll('chronoball.actionComplete', data.completedAction);
       case 'interceptionResponse':
@@ -67,7 +89,8 @@ export class ChronoballSocket {
 
     // Route GM-only messages
     // _localExecution flag is set by executeAsGM() for local dispatch (any GM)
-    if (this.isPrimaryGM() || data._localExecution) {
+    const isExecutor = _targetUserId ? _targetUserId === game.user.id : this.isPrimaryGM();
+    if (isExecutor || data._localExecution) {
       switch (action) {
         case 'throwBall':
           return this.executeThrowBall(data);
@@ -101,6 +124,10 @@ export class ChronoballSocket {
           return this.executePlayerMovedToken(data);
         case 'determineTeams':
           return this.executeDetermineTeams(data);
+        case 'finishTurn':
+          return this.executeFinishTurn(data);
+        case 'updateRules':
+          return this.executeUpdateRules(data);
 
         default:
           if (!targetUserId) { // Avoid warning for messages intended for players
@@ -129,12 +156,15 @@ export class ChronoballSocket {
    * Execute an action either locally (if GM) or via socket
    */
   static async executeAsGM(action, data = {}) {
-    if (this.isPrimaryGM()) {
-      // Execute directly — this user is the authoritative GM
+    const executor = this.getExecutionUser(action, data);
+    const isExecutor = executor.id === game.user.id;
+
+    if (isExecutor) {
+      // Execute directly — this user is the authoritative executor for this action
       return await this.onSocketMessage({ action, ...data, _localExecution: true });
     } else {
-      // Secondary GM or Player — send to primary GM via socket
-      this.emit(action, data);
+      // Send to the designated executor via socket
+      this.emit(action, { ...data, _targetUserId: executor.id });
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           Hooks.off('chronoball.actionComplete', hook);
@@ -152,45 +182,75 @@ export class ChronoballSocket {
     }
   }
 
-  /**
-   * Check if current user is primary GM
-   */
   static isPrimaryGM() {
-    if (!game.user?.isGM) return false;
-
-    const primaryGMId = game.settings.get('chronoball', 'primaryGM');
-
-    // Validate stored primary GM — must be an active GM, otherwise fall through to auto-detect
-    if (primaryGMId) {
-      const primaryUser = game.users.get(primaryGMId);
-      if (primaryUser?.isGM && primaryUser.active) {
-        ChronoballUtils.log(`Chronoball | isPrimaryGM: stored ID ${primaryGMId} is valid and active`);
-        return game.user.id === primaryGMId;
-      }
-      ChronoballUtils.log(`Chronoball | isPrimaryGM: stored ID "${primaryGMId}" is invalid or offline, falling back to auto-detect`);
-    }
-
-    // Auto-detect: sort by ID for deterministic selection across all clients
-    const activeGMs = game.users.filter(u => u.isGM && u.active);
-    activeGMs.sort((a, b) => a.id.localeCompare(b.id));
-    const result = activeGMs[0]?.id === game.user.id;
-    ChronoballUtils.log(`Chronoball | isPrimaryGM auto-detect: ${result} (active GMs: ${activeGMs.map(u => u.name).join(', ')})`);
+    const host = this.getPrimaryGM();
+    const result = !!host && host.id === game.user.id;
+    ChronoballUtils.log(`Chronoball | isPrimaryGM: ${result} (host: ${host?.name ?? 'none'})`);
     return result;
   }
 
   /**
-   * Get primary GM user
+   * Get the authoritative host user (falls back deterministically to the first active user).
    */
   static getPrimaryGM() {
-    const primaryGMId = game.settings.get('chronoball', 'primaryGM');
+    // Fallback: choose the first active user (deterministic across clients)
+    const activeUsers = game.users.filter(u => u.active).sort((a, b) => a.id.localeCompare(b.id));
+    return activeUsers[0] ?? null;
+  }
 
-    if (primaryGMId) {
-      const user = game.users.get(primaryGMId);
-      if (user && user.isGM && user.active) return user;
+  /**
+   * Check if current client is authorized to execute a database action.
+   * If a GM is active, only the Primary GM (GM client) is authorized.
+   * If no GM is active, either the Primary GM (first active user) OR the owner of the document is authorized.
+   */
+  static isAuthorizedExecutor(doc = null) {
+    const activeGM = game.users.activeGM;
+    if (activeGM) {
+      return this.isPrimaryGM();
+    }
+    if (this.isPrimaryGM()) return true;
+    if (doc) {
+      const actor = doc.actor || doc;
+      if (actor && actor.isOwner) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Find the user client that should execute a database action.
+   * If a GM is active, the GM client is always the executor.
+   * If no GM is active, it routes to the owner of the document if possible.
+   */
+  static getExecutionUser(action, data) {
+    const activeGM = game.users.activeGM;
+    if (activeGM) return activeGM;
+
+    // No GM online: route to the owner of the relevant document if possible
+    let actor = null;
+    if (data.tokenId) {
+      const tokenDoc = ChronoballUtils.getMatchScene()?.tokens.get(data.tokenId);
+      actor = tokenDoc?.actor;
+    } else if (data.actorId) {
+      actor = game.actors.get(data.actorId);
+    } else if (action === 'clearCarrier') {
+      const scene = ChronoballUtils.getMatchScene();
+      const state = scene?.getFlag('chronoball', 'matchState') || {};
+      if (state.carrierId) {
+        const tokenDoc = scene?.tokens.get(state.carrierId);
+        actor = tokenDoc?.actor;
+      }
     }
 
-    // Fallback to first active GM
-    return game.users.find(u => u.isGM && u.active);
+    if (actor) {
+      // Find an active player who is an owner of this actor. Prefer players, but fallback to GMs if no player owner is online.
+      const activeOwner = game.users.find(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER")) ||
+                          game.users.find(u => u.active && actor.testUserPermission(u, "OWNER"));
+      if (activeOwner) return activeOwner;
+    }
+
+    // Default fallback: the initiator (the client that sent/triggered the action)
+    const initiatorId = data.userId || game.user.id;
+    return game.users.get(initiatorId) || game.user;
   }
 
   /**
@@ -249,6 +309,13 @@ export class ChronoballSocket {
     const ChronoballState = (await import('./state.js')).ChronoballState;
     await ChronoballState.updateState(updates);
     this.broadcastActionComplete('updateMatchState');
+  }
+
+  static async executeUpdateRules(data) {
+    const { updates } = data;
+    const ChronoballState = (await import('./state.js')).ChronoballState;
+    await ChronoballState.updateRules(updates);
+    this.broadcastActionComplete('updateRules');
   }
 
   static async executeFumbleBall(data) {
@@ -316,27 +383,47 @@ export class ChronoballSocket {
       const { ChronoballRoster } = await import('./roster.js');
       const { ChronoballBallExecute } = await import('./ball-execute.js');
 
-      // Ensure combat exists
-      await ChronoballState.ensureCombat();
+      // Resolve the match scene from the initiating player's scene id (the host may
+      // be viewing a different scene). Fall back to the standard resolution.
+      const scene = ChronoballUtils.getMatchScene(data.sceneId);
+      if (!scene) {
+        ui.notifications.error(game.i18n.localize('CHRONOBALL.Errors.NoScene'));
+        return;
+      }
+
+      // Store the active match scene ID on the Ball Actor's flags
+      const ballActor = await ChronoballState.getOrCreateBallActor();
+      if (ballActor) {
+        await ballActor.setFlag('chronoball', 'matchActiveSceneId', scene.id);
+      }
 
       // Create or find ball token
       await ChronoballBallExecute.ensureBallToken();
 
-      // Rebuild initiative with alternating teams
-      await ChronoballRoster.rebuildInitiative();
+      // Rebuild turn order
+      await ChronoballRoster.rebuildTurnOrder();
 
       // Reset match state
       await ChronoballState.resetTurnDistances();
 
-      // Mark scene as having an active match
-      await canvas.scene.setFlag('chronoball', 'matchActive', true);
-
-      ui.notifications.info('Match started! Combat tracker is ready.');
+      ui.notifications.info('Match started!');
       this.broadcastActionComplete('startMatch');
       ChronoballUtils.log(`Chronoball | Start match completed successfully`);
     } catch (e) {
       console.error('Chronoball | Failed to execute start match via GM:', e);
       ui.notifications.error('Failed to start match. Check console for details.');
+    }
+  }
+
+  static async executeFinishTurn(data) {
+    try {
+      ChronoballUtils.log(`Chronoball | GM executing finish turn`);
+      const { ChronoballState } = await import('./state.js');
+      await ChronoballState.nextTurn();
+      this.broadcastActionComplete('finishTurn');
+      ChronoballUtils.log(`Chronoball | Finish turn completed successfully`);
+    } catch (e) {
+      console.error('Chronoball | Failed to execute finish turn via GM:', e);
     }
   }
 
@@ -347,7 +434,7 @@ export class ChronoballSocket {
 
   static async executePlayerMovedToken(data) {
     const { tokenId, changes, oldPos } = data;
-    const tokenDoc = canvas.scene.tokens.get(tokenId);
+    const tokenDoc = ChronoballUtils.getMatchScene()?.tokens.get(tokenId);
     if (tokenDoc) {
       const { Chronoball } = await import('../chronoball.js');
       Chronoball.handleTokenMovement(tokenDoc, changes, oldPos);
@@ -356,7 +443,7 @@ export class ChronoballSocket {
 
   static async executeDetermineTeams(data) {
     const { ChronoballRoster } = await import('./roster.js');
-    await ChronoballRoster.determineTeamsFromEndzones();
+    await ChronoballRoster.determineTeamsFromEndzones(data.sceneId);
     this.broadcastActionComplete('determineTeams');
   }
 

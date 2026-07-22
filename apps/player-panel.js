@@ -32,12 +32,16 @@ export class ChronoballPlayerPanel extends HandlebarsApplicationMixin(Applicatio
   async _prepareContext() {
     const state = ChronoballState.getMatchState();
     const rosters = ChronoballRoster.getRosterDisplayData();
+    const { ChronoballSocket } = await import('../scripts/socket.js');
+    const host = ChronoballSocket.getPrimaryGM();
     return {
       state,
       rosters,
       hasTeamA: rosters.teamA.length > 0,
       hasTeamB: rosters.teamB.length > 0,
-      maxPlayersPerTeam: ChronoballRoster.MAX_PLAYERS_PER_TEAM
+      maxPlayersPerTeam: ChronoballRoster.MAX_PLAYERS_PER_TEAM,
+      hostOnline: !!host,
+      hostName: host?.name ?? ''
     };
   }
   
@@ -78,7 +82,7 @@ export class ChronoballPlayerPanel extends HandlebarsApplicationMixin(Applicatio
     event.preventDefault();
 
     const { ChronoballSocket } = await import('../scripts/socket.js');
-    await ChronoballSocket.executeAsGM('determineTeams', {});
+    await ChronoballSocket.executeAsGM('determineTeams', { sceneId: canvas.scene?.id });
 
     this.render();
   }
@@ -95,7 +99,7 @@ export class ChronoballPlayerPanel extends HandlebarsApplicationMixin(Applicatio
 
     // Execute start match via GM
     const { ChronoballSocket } = await import('../scripts/socket.js');
-    await ChronoballSocket.executeAsGM('startMatch', {});
+    await ChronoballSocket.executeAsGM('startMatch', { sceneId: canvas.scene?.id });
 
     this.render();
   }

@@ -23,6 +23,37 @@ export class ChronoballUtils {
   }
 
   /**
+   * Resolve the Scene document the active match runs on, independent of which
+   * scene the current client is viewing. This lets the host execute authoritative
+   * actions while sitting on a different scene.
+   * Resolution order: explicit id → scene flagged `matchActive` → active combat's
+   * scene → the currently viewed scene.
+   * @param {string} [sceneId] Optional explicit scene id (used by setup actions).
+   * @returns {Scene|null}
+   */
+  static getMatchScene(sceneId) {
+    if (sceneId) {
+      const explicit = game.scenes?.get(sceneId);
+      if (explicit) return explicit;
+    }
+    const ballActor = game.actors?.find(a => a.name === 'Chronoball');
+    const activeSceneId = ballActor?.getFlag('chronoball', 'matchActiveSceneId');
+    if (activeSceneId) {
+      const scene = game.scenes?.get(activeSceneId);
+      if (scene) return scene;
+    }
+    return canvas?.scene ?? null;
+  }
+
+  /**
+   * The BaseGrid instance of the match scene (has size/distance/measurePath),
+   * falling back to the active canvas grid.
+   */
+  static getMatchGrid() {
+    return this.getMatchScene()?.grid ?? canvas?.grid ?? null;
+  }
+
+  /**
    * Return the neutral token attitude/disposition value across Foundry versions.
    */
   static getNeutralAttitude() {
@@ -70,20 +101,47 @@ export class ChronoballUtils {
       const sourcePos = source.center ? source.center : {x: source.x, y: source.y};
       const targetPos = target.center ? target.center : {x: target.x, y: target.y};
 
-      // Ensure we have valid points to measure
       if (sourcePos.x == null || sourcePos.y == null || targetPos.x == null || targetPos.y == null) {
         console.warn("Chronoball | calculateDistance received invalid source or target", {source, target});
         return Infinity;
       }
 
-      const pathData = canvas.grid.measurePath([sourcePos, targetPos]);
-      const distance = pathData.distance;
+      const grid = this.getMatchGrid() ?? canvas.grid;
+      const pathData = grid.measurePath([sourcePos, targetPos]);
+      const distance = Number(pathData?.distance ?? pathData ?? Infinity);
 
       return Math.round(distance);
     } catch (e) {
       console.error("Chronoball | Error in calculateDistance:", e, {source, target});
       return Infinity;
     }
+  }
+
+  /**
+   * Calculate straight-line distance between two points or tokens in scene pixels.
+   */
+  static calculatePixelDistance(source, target) {
+    const sourcePos = source.center ? source.center : {x: source.x, y: source.y};
+    const targetPos = target.center ? target.center : {x: target.x, y: target.y};
+
+    if (sourcePos.x == null || sourcePos.y == null || targetPos.x == null || targetPos.y == null) {
+      return Infinity;
+    }
+
+    const dx = targetPos.x - sourcePos.x;
+    const dy = targetPos.y - sourcePos.y;
+    return Math.hypot(dx, dy);
+  }
+
+  /**
+   * Convert scene pixel distance to grid distance units (typically feet).
+   */
+  static pixelsToGridDistance(pixels) {
+    const grid = this.getMatchGrid();
+    const gridSize = Number(grid?.size ?? canvas?.grid?.size ?? 0);
+    const gridDistance = Number(grid?.distance ?? canvas?.grid?.distance ?? 0);
+    if (!gridSize || !gridDistance) return Infinity;
+    return (pixels / gridSize) * gridDistance;
   }
 
   /**

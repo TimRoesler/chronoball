@@ -11,7 +11,8 @@
       "RemainingMove": "Ball Move",
       "RemainingThrow": "Ball Throw",
       "Feet": "ft",
-      "BallCarrier": "Ball Carrier"
+      "BallCarrier": "Ball Carrier",
+      "FinishTurn": "Finish Turn"
     },
     "PlayerPanel": {
       "Title": "Chronoball Player Panel",
@@ -37,13 +38,17 @@
       "Actions": "Actions",
       "Control": "Ball Control",
       "MatchFlow": "Match Flow",
-      "StartMatch": "Start Match"
+      "StartMatch": "Start Match",
+      "HostOnline": "Host: {name}",
+      "HostOffline": "Host offline"
     },
     "RulesPanel": {
       "Title": "Chronoball Rules Configuration",
       "Endzones": "Endzones",
-      "ZoneATile": "Zone A Tile UUID",
-      "ZoneBTile": "Zone B Tile UUID",
+      "EndzonesHint": "Select a Region on this scene for each endzone. Rectangular regions are recommended (the ball spawns at the region's bounding-box center).",
+      "ZoneARegion": "Zone A Region",
+      "ZoneBRegion": "Zone B Region",
+      "RegionNone": "— none —",
       "MovementLimits": "Movement Limits per Turn",
       "BallMove": "Ball Move (ft)",
       "BallThrow": "Ball Throw (ft)",
@@ -66,6 +71,11 @@
       "TempHP": "Temporary Hit Points",
       "AuraSource": "Aura Source (Image/Video)",
       "AuraScale": "Aura Scale",
+      "ActivePlayerAura": "Active Player Aura Options",
+      "ActivePlayerAuraSource": "Active Player Aura Effect",
+      "ActivePlayerAuraSourceHint": "The Sequencer animation file path to display around the token whose turn it is.",
+      "ActivePlayerAuraScale": "Active Player Aura Scale",
+      "ActivePlayerAuraScaleHint": "The scale of the active player aura animation.",
       "BallToken": "Ball Token Options",
       "BallTexture": "Texture Source",
       "BallScale": "Token Scale",
@@ -83,6 +93,12 @@
       "FumbleDamageThresholdHint": "Amount of damage taken in a round to trigger a new CON save.",
       "FumbleDCIncrease": "Fumble DC Increase",
       "FumbleDCIncreaseHint": "Amount the Fumble DC increases for each damage threshold crossed.",
+      "TeamSettings": "Team Settings",
+      "MaxPlayers": "Max Players per Team",
+      "MaxPlayersHint": "The maximum number of players allowed on each team.",
+      "GameplayOptions": "Gameplay Options",
+      "AllowRollModification": "Allow Roll Modification",
+      "AllowRollModificationHint": "Allow players to modify their rolls (reroll/bonus) before resolving actions.",
       "Save": "Save",
       "Reset": "Reset"
     },
@@ -205,14 +221,12 @@
       "CouldNotCreateBallToken": "Could not create ball token.",
       "OnlyGMCanHeal": "Only GM can heal rosters",
       "OnlyGMCanClearEffects": "Only GM can clear effects",
-      "GMTimeout": "Action timed out — no GM responded. Is a GM connected?"
+      "GMTimeout": "Action timed out — no host responded.",
+      "NoHost": "No host found to process the action."
     },
     "Settings": {
-      "PrimaryGM": "Primary GM User ID",
-      "PrimaryGMHint": "User ID of the primary GM for authoritative actions",
-      "AllowRollMod.Name": "Allow Roll Modification",
-      "AllowRollMod.Hint": "If enabled, players and GMs will be prompted to modify roll results (reroll, add bonus) after a roll. Disable for stricter gameplay.",
-      "PrimaryGMUpdated": "Primary GM updated"
+      "DebugMode": "Debug Mode",
+      "DebugModeHint": "Enable debug logging in the browser console for troubleshooting"
     },
     "Notifications": {
       "ClickToTarget": "Click on the canvas to select target location",

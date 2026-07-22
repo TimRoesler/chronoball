@@ -20,13 +20,13 @@ export class ChronoballScoring {
     const state = ChronoballState.getMatchState();
     const rules = ChronoballState.getRules();
 
-    if (!rules.zoneATileId || !rules.zoneBTileId) {
+    if (!rules.zoneARegionId || !rules.zoneBRegionId) {
       return; // Endzones not configured
     }
 
     // Capture the "in endzone" status IMMEDIATELY (Snapshot)
-    const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBTileId : rules.zoneATileId;
-    const inEndzoneSnapshot = ChronoballState.isTokenCenterInTile(tokenDoc, x, y, targetZoneId);
+    const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBRegionId : rules.zoneARegionId;
+    const inEndzoneSnapshot = ChronoballState.isTokenCenterInRegion(tokenDoc, x, y, targetZoneId);
 
     if (!inEndzoneSnapshot) return;
 
@@ -61,10 +61,10 @@ export class ChronoballScoring {
     const state = ChronoballState.getMatchState();
     const rules = ChronoballState.getRules();
 
-    if (!rules.zoneATileId || !rules.zoneBTileId) {
+    if (!rules.zoneARegionId || !rules.zoneBRegionId) {
       return;
     }
-    
+
     // Debounce to prevent multiple scores
     const now = Date.now();
     if (now - state.lastScoreTimestamp < this.SCORE_DEBOUNCE_TIME) {
@@ -72,10 +72,10 @@ export class ChronoballScoring {
     }
 
     // Determine which endzone to check based on attacking team
-    const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBTileId : rules.zoneATileId;
+    const targetZoneId = state.attackingTeam === 'A' ? rules.zoneBRegionId : rules.zoneARegionId;
 
     // Check if ball's center is in target endzone
-    const inEndzone = ChronoballState.isTokenCenterInTile(ballTokenDoc, x, y, targetZoneId);
+    const inEndzone = ChronoballState.isTokenCenterInRegion(ballTokenDoc, x, y, targetZoneId);
 
     if (inEndzone) {
       await this.awardThrowScore(state.attackingTeam);
@@ -181,7 +181,7 @@ export class ChronoballScoring {
     ui.notifications.notify(game.i18n.format('CHRONOBALL.Notifications.ScorePassEndzone', { team: teamName, points }));
   }
   
-  // isTokenInTile has been moved to state.js as isTokenCenterInTile and isTokenFullyInTile
+  // Endzone containment lives in state.js as isTokenCenterInRegion (RegionDocument#testPoint)
   
   /**
    * Create scoring chat message

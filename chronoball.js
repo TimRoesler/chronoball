@@ -51,60 +51,13 @@ class Chronoball {
     console.log('Chronoball | Module initialized');
   }
   
-  static getPrimaryGMChoices() {
-    const choices = { '': 'Auto (first active GM)' };
-    const gmUsers = game.users?.filter(u => u.isGM) || [];
 
-    for (const user of gmUsers) {
-      const status = user.active ? '' : ' (offline)';
-      choices[user.id] = `${user.name}${status}`;
-    }
-
-    return choices;
-  }
-
-  static refreshPrimaryGMSettingChoices() {
-    const setting = game.settings.settings.get(`${Chronoball.ID}.primaryGM`);
-    if (!setting) return;
-    setting.choices = this.getPrimaryGMChoices();
-  }
-
-  static populatePrimaryGMSelect(html) {
-    // Support both jQuery (v11/v12) and DOM element (v13 ApplicationV2)
-    let selectEl;
-    if (html?.find) {
-      // jQuery object
-      const $select = html.find(`select[name="${Chronoball.ID}.primaryGM"]`);
-      selectEl = $select?.[0];
-    }
-    if (!selectEl && html?.querySelector) {
-      selectEl = html.querySelector(`select[name="${Chronoball.ID}.primaryGM"]`);
-    }
-    if (!selectEl && html?.element?.querySelector) {
-      selectEl = html.element.querySelector(`select[name="${Chronoball.ID}.primaryGM"]`);
-    }
-    if (!selectEl) return;
-
-    this.refreshPrimaryGMSettingChoices();
-    const choices = game.settings.settings.get(`${Chronoball.ID}.primaryGM`)?.choices ?? {};
-    const currentValue = game.settings.get(Chronoball.ID, 'primaryGM') ?? '';
-
-    selectEl.innerHTML = '';
-    for (const [value, label] of Object.entries(choices)) {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = label;
-      selectEl.appendChild(option);
-    }
-
-    selectEl.value = currentValue;
-  }
   
   static registerSettings() {
     // Debug mode
     game.settings.register(Chronoball.ID, 'debugMode', {
-      name: 'Debug Mode',
-      hint: 'Enable debug logging in the browser console for troubleshooting',
+      name: 'CHRONOBALL.Settings.DebugMode',
+      hint: 'CHRONOBALL.Settings.DebugModeHint',
       scope: 'world',
       config: true,
       type: Boolean,
@@ -114,44 +67,7 @@ class Chronoball {
       }
     });
 
-    // Primary GM setting with choices
-    game.settings.register(Chronoball.ID, 'primaryGM', {
-      name: 'Primary GM',
-      hint: 'Select the primary GM for authoritative actions. Leave as "Auto" to use the first active GM.',
-      scope: 'world',
-      config: true,
-      type: String,
-      default: '',
-      choices: {
-        '': 'Auto (first active GM)'
-      },
-      onChange: () => {}
-    });
 
-    // Setting to allow/disallow roll modification dialogs
-    game.settings.register(Chronoball.ID, 'allowRollModification', {
-      name: 'CHRONOBALL.Settings.AllowRollMod.Name',
-      hint: 'CHRONOBALL.Settings.AllowRollMod.Hint',
-      scope: 'world',
-      config: true,
-      type: Boolean,
-      default: true
-    });
-
-    // Max players per team
-    game.settings.register(Chronoball.ID, 'maxPlayers', {
-      name: 'Max Players per Team',
-      hint: 'The maximum number of players allowed on each team (default is 3).',
-      scope: 'world',
-      config: true,
-      type: Number,
-      default: 3,
-      onChange: () => {
-        if (ChronoballSocket.isPrimaryGM()) {
-          ChronoballRoster.rebuildInitiative();
-        }
-      }
-    });
 
     // Hidden setting to store the ball actor ID
     game.settings.register(Chronoball.ID, 'ballActorId', {
@@ -180,6 +96,7 @@ class Chronoball {
   }
   
   static _tokenPositions = {};
+  static _currentAuraTokenId = null;
 
     static handleTokenMovement(tokenDoc, changes, oldPos) {
         if (!oldPos) return;
@@ -200,7 +117,8 @@ class Chronoball {
         if (isCarrier) {
           const origin = {x: oldX, y: oldY};
           const destination = {x: newX, y: newY};
-          const pathData = canvas.grid.measurePath([origin, destination]);
+          const grid = ChronoballUtils.getMatchGrid() ?? canvas.grid;
+          const pathData = grid.measurePath([origin, destination]);
           const feetDistance = pathData.distance;
 
           if (feetDistance > 0) {
@@ -219,24 +137,80 @@ class Chronoball {
         }
     }
 
+  static async updateActivePlayerAura(state) {
+    if (!game.modules.get('sequencer')?.active) return;
+
+    const activeTokenId = state?.turnOrder && state?.currentTurnIndex !== undefined && state?.currentTurnIndex >= 0
+      ? state.turnOrder[state.currentTurnIndex]
+      : null;
+
+    if (activeTokenId === this._currentAuraTokenId) {
+      return; // Turn didn't transition to a different token, skip duplicate sequence plays
+    }
+
+    console.log("Chronoball | Active player turn transitioned from", this._currentAuraTokenId, "to", activeTokenId);
+    this._currentAuraTokenId = activeTokenId;
+
+    const rules = ChronoballState.getRules();
+    const auraSource = rules.activePlayerAuraSource;
+    const auraScale = rules.activePlayerAuraScale || 1.5;
+
+    console.log("Chronoball | updateActivePlayerAura called", {
+      activeTokenId,
+      auraSource,
+      auraScale,
+      turnOrder: state?.turnOrder,
+      currentTurnIndex: state?.currentTurnIndex
+    });
+
+    // Always end existing active player auras first
+    await Sequencer.EffectManager.endEffects({ name: 'chronoball-active-player-aura' });
+
+    if (activeTokenId && auraSource) {
+      const token = canvas.tokens?.get(activeTokenId);
+      console.log("Chronoball | Active player token resolved on canvas:", !!token);
+      if (token) {
+        const sequence = new Sequence()
+          .effect()
+          .file(auraSource)
+          .attachTo(token, { bindAlpha: false })
+          .belowTokens(true)
+          .scale(auraScale)
+          .fadeIn(500)
+          .fadeOut(500)
+          .opacity(0.8)
+          .persist()
+          .name('chronoball-active-player-aura');
+
+        try {
+          await sequence.play();
+          console.log("Chronoball | Sequencer active player aura played successfully on token:", token.name);
+        } catch (e) {
+          console.warn('Chronoball | Active player aura play failed:', e);
+        }
+      }
+    }
+  }
+
   static setupHooks() {
     // Ready hook
     Hooks.on('ready', () => {
       console.log('Chronoball | Ready');
       ChronoballHUD.mount();
       this.createMacros();
-      this.refreshPrimaryGMSettingChoices();
+      // Request initial state sync from Host
+      ChronoballSocket.emit('requestStateSync');
     });
 
-    Hooks.on('renderSettingsConfig', (app, html) => {
-      this.populatePrimaryGMSelect(html);
+    Hooks.on('chronoball.stateChanged', (state) => {
+      this.updateActivePlayerAura(state);
     });
     
     // Hide commentary when no match is active on current scene
-    Hooks.on('renderChatMessage', (message, html) => {
+    Hooks.on('renderChatMessageHTML', (message, html) => {
       if (!ChronoballState.isMatchActiveOnCurrentScene()) {
-        const el = html[0] || html;
-        if (el.querySelector?.('.chronoball-chat-message')) {
+        const el = html instanceof HTMLElement ? html : html?.[0] || html;
+        if (el?.querySelector?.('.chronoball-chat-message')) {
           el.style.display = 'none';
         }
       }
@@ -247,30 +221,22 @@ class Chronoball {
       if (action === 'startMatch' || action === 'endMatch') {
         ChronoballHUD.updateVisibility();
         ui.chat.scrollBottom();
+        if (action === 'endMatch') {
+          Chronoball._currentAuraTokenId = null;
+          if (game.modules.get('sequencer')?.active) {
+            Sequencer.EffectManager.endEffects({ name: 'chronoball-active-player-aura' });
+          }
+        }
       }
     });
 
     // Canvas ready hook
     Hooks.on('canvasReady', () => {
       ChronoballHUD.updateVisibility();
+      this.updateActivePlayerAura(ChronoballState.getMatchState());
     });
     
-    // Hide HUD when combat is deleted (match end or manual cleanup)
-    Hooks.on('deleteCombat', () => {
-      ChronoballHUD.updateVisibility();
-    });
-
-    // Combat hooks
-    Hooks.on('updateCombat', (combat, changed, options, userId) => {
-      if (changed.round !== undefined && ChronoballSocket.isPrimaryGM()) {
-        ChronoballState.updateState({ carrierDamageInRound: 0 });
-        ChronoballUtils.log('Chronoball | New round, carrier damage reset.');
-      }
-      if (changed.turn !== undefined || changed.round !== undefined) {
-        ChronoballState.onCombatTurnChange(combat);
-        ChronoballHUD.render();
-      }
-    });
+    // Bypassed combat hooks (custom turn tracker is used instead)
 
     // Use preUpdate to capture the state BEFORE the update
     Hooks.on('preUpdateToken', (tokenDoc, changes, options, userId) => {
@@ -310,13 +276,18 @@ class Chronoball {
 
     // Actor pre-update hook for damage detection
     Hooks.on('preUpdateActor', (actor, changes, options, userId) => {
+      // Ignore HP changes the module itself makes (e.g. granting/removing the
+      // carrier's temporary hit points) — those are not damage and must not
+      // trigger a fumble save.
+      if (options?.chronoball_internal) return;
       const flatChanges = foundry.utils.flattenObject(changes);
       const hpChanged = Object.keys(flatChanges).some(k => k.startsWith('system.attributes.hp'));
       if (!hpChanged) return;
       const state = ChronoballState.getMatchState();
       if (!state.carrierId) return;
-      const carrierToken = canvas.tokens.get(state.carrierId);
-      if (!carrierToken || actor.id !== carrierToken.actor.id) return;
+      // Scene-independent carrier lookup so detection works on any client/scene.
+      const carrierToken = ChronoballState.getCarrierTokenDoc();
+      if (!carrierToken || actor.id !== carrierToken.actor?.id) return;
       const oldHP = actor.system.attributes.hp;
       const oldTotalHP = (oldHP.value || 0) + (oldHP.temp || 0);
       const newHPValue = foundry.utils.getProperty(changes, 'system.attributes.hp.value') ?? oldHP.value;
@@ -349,25 +320,25 @@ class Chronoball {
         name: 'Chronoball: Ball werfen',
         type: 'script',
         command: 'game.chronoball.throwBall();',
-        img: 'icons/svg/target.svg'
+        img: 'modules/chronoball/assets/icons/chrono_throw.png'
       },
       {
         name: 'Chronoball: Pass',
         type: 'script',
         command: 'game.chronoball.passBall();',
-        img: 'icons/svg/combat.svg'
+        img: 'modules/chronoball/assets/icons/chrono_pass.png'
       },
       {
         name: 'Chronoball: Ball aufnehmen',
         type: 'script',
         command: 'game.chronoball.pickupBall();',
-        img: 'icons/svg/item-bag.svg'
+        img: 'modules/chronoball/assets/icons/chrono_pickup.png'
       },
       {
         name: 'Chronoball: Ball fallen lassen',
         type: 'script',
         command: 'game.chronoball.dropBall();',
-        img: 'icons/svg/falling.svg'
+        img: 'modules/chronoball/assets/icons/chrono_drop.png'
       }
     ];
     

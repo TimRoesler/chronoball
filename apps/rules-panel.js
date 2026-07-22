@@ -58,7 +58,14 @@ export class ChronoballRulesPanel extends HandlebarsApplicationMixin(Application
       checked: savedSkills.has(id)
     }));
 
-    return { rules, dndSkills };
+    // Endzone region dropdowns — list the regions on the scene being configured.
+    const scene = canvas.scene;
+    const regions = [...(scene?.regions ?? [])].map(r => ({ id: r.id, name: r.name || r.id }));
+    const buildOptions = (selectedId) => regions.map(r => ({ ...r, selected: r.id === selectedId }));
+    const zoneAOptions = buildOptions(rules.zoneARegionId);
+    const zoneBOptions = buildOptions(rules.zoneBRegionId);
+
+    return { rules, dndSkills, zoneAOptions, zoneBOptions };
   }
   
   _onRender(context, options) {
@@ -87,6 +94,8 @@ export class ChronoballRulesPanel extends HandlebarsApplicationMixin(Application
     formData.interceptTimeout = parseInt(formData.interceptTimeout) || 10000;
     formData.carrierTempHP = parseInt(formData.carrierTempHP) || 10;
     formData.carrierAuraScale = parseFloat(formData.carrierAuraScale) || 1.5;
+    formData.activePlayerAuraScale = parseFloat(formData.activePlayerAuraScale) || 1.5;
+    formData.maxPlayers = parseInt(formData.maxPlayers) || 3;
     formData.ballScale = parseFloat(formData.ballScale) || 1.0;
     formData.scoreRunIn = parseInt(formData.scoreRunIn) || 2;
     formData.scoreThrow = parseInt(formData.scoreThrow) || 1;
@@ -98,6 +107,7 @@ export class ChronoballRulesPanel extends HandlebarsApplicationMixin(Application
     // Handle checkboxes which are not present in formData if unchecked
     formData.interceptOnThrow = formData.interceptOnThrow || false;
     formData.blockAtReceiver = formData.blockAtReceiver || false;
+    formData.allowRollModification = formData.allowRollModification || false;
 
     // Handle skill checkboxes
     const selectedSkills = Object.keys(formData)

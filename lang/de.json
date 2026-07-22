@@ -11,7 +11,8 @@
       "RemainingMove": "Ball bewegen",
       "RemainingThrow": "Ball werfen",
       "Feet": "ft",
-      "BallCarrier": "Ballträger"
+      "BallCarrier": "Ballträger",
+      "FinishTurn": "Zug beenden"
     },
     "PlayerPanel": {
       "Title": "Chronoball Spielerpanel",
@@ -37,13 +38,17 @@
       "Actions": "Aktionen",
       "Control": "Ballkontrolle",
       "MatchFlow": "Matchverlauf",
-      "StartMatch": "Match starten"
+      "StartMatch": "Match starten",
+      "HostOnline": "Host: {name}",
+      "HostOffline": "Host offline"
     },
     "RulesPanel": {
       "Title": "Chronoball Regelkonfiguration",
       "Endzones": "Endzonen",
-      "ZoneATile": "Zone A Tile UUID",
-      "ZoneBTile": "Zone B Tile UUID",
+      "EndzonesHint": "Wähle für jede Endzone eine Region dieser Szene. Rechteckige Regions werden empfohlen (der Ball spawnt im Mittelpunkt der Bounding-Box der Region).",
+      "ZoneARegion": "Zone A Region",
+      "ZoneBRegion": "Zone B Region",
+      "RegionNone": "— keine —",
       "MovementLimits": "Bewegungslimits pro Zug",
       "BallMove": "Ball bewegen (ft)",
       "BallThrow": "Ball werfen (ft)",
@@ -66,6 +71,11 @@
       "TempHP": "Temporäre Trefferpunkte",
       "AuraSource": "Aura-Quelle (Bild/Video)",
       "AuraScale": "Aura-Skalierung",
+      "ActivePlayerAura": "Aura-Optionen für aktiven Spieler",
+      "ActivePlayerAuraSource": "Aura-Effekt für aktiven Spieler",
+      "ActivePlayerAuraSourceHint": "Der Pfad der Sequencer-Animationsdatei, die um den Token des Spielers angezeigt wird, der gerade am Zug ist.",
+      "ActivePlayerAuraScale": "Aura-Skalierung für aktiven Spieler",
+      "ActivePlayerAuraScaleHint": "Die Skalierung der Aura-Animation für den aktiven Spieler.",
       "BallToken": "Balltoken-Optionen",
       "BallTexture": "Texturquelle",
       "BallScale": "Token-Skalierung",
@@ -83,6 +93,12 @@
       "FumbleDamageThresholdHint": "Schadensmenge in einer Runde, um einen neuen CON-Rettungswurf auszulösen.",
       "FumbleDCIncrease": "Fumble DC-Anstieg",
       "FumbleDCIncreaseHint": "Betrag, um den der Fumble-DC für jede überschrittene Schadensschwelle ansteigt.",
+      "TeamSettings": "Teameinstellungen",
+      "MaxPlayers": "Max. Spieler pro Team",
+      "MaxPlayersHint": "Die maximale Anzahl an Spielern pro Team.",
+      "GameplayOptions": "Gameplay-Optionen",
+      "AllowRollModification": "Würfel-Modifikation erlauben",
+      "AllowRollModificationHint": "Wenn aktiviert, können Spieler ihre Würfe (neu würfeln/Bonus) modifizieren, bevor Aktionen aufgelöst werden.",
       "Save": "Speichern",
       "Reset": "Zurücksetzen"
     },
@@ -205,14 +221,12 @@
       "CouldNotCreateBallToken": "Ball-Token konnte nicht erstellt werden.",
       "OnlyGMCanHeal": "Nur der GM kann Roster heilen",
       "OnlyGMCanClearEffects": "Nur der GM kann Effekte löschen",
-      "GMTimeout": "Aktion abgelaufen — kein GM hat geantwortet. Ist ein GM verbunden?"
+      "GMTimeout": "Aktion abgelaufen — kein Host hat geantwortet.",
+      "NoHost": "Kein Host gefunden, um die Aktion auszuführen."
     },
     "Settings": {
-      "PrimaryGM": "Primäre GM User-ID",
-      "PrimaryGMHint": "User-ID des primären GMs für autoritative Aktionen",
-      "AllowRollMod.Name": "Würfel-Modifikation erlauben",
-      "AllowRollMod.Hint": "Wenn aktiviert, werden Spieler und GMs aufgefordert, Würfelergebnisse (neu würfeln, Bonus hinzufügen) nach einem Wurf zu modifizieren. Deaktivieren für strengeres Gameplay.",
-      "PrimaryGMUpdated": "Primärer GM aktualisiert"
+      "DebugMode": "Debug-Modus",
+      "DebugModeHint": "Debug-Logging in der Browser-Konsole zur Fehlersuche aktivieren"
     },
     "Notifications": {
       "ClickToTarget": "Klicke auf die Szene, um den Zielpunkt auszuwählen",

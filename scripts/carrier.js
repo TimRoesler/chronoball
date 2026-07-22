@@ -3,21 +3,22 @@
  */
 
 import { ChronoballState } from './state.js';
+import { ChronoballSocket } from './socket.js';
 import { ChronoballUtils } from './utils.js';
 
 export class ChronoballCarrier {
   static async executeSetCarrier(tokenId) {
-    // Ensure this runs as GM
-    if (!game.user.isGM) {
-      console.error('Chronoball | executeSetCarrier called by non-GM, this should not happen!');
+    const token = ChronoballState.getMatchTokenDoc(tokenId);
+    if (!token) return;
+
+    // Ensure this runs as authorized executor (GM/Host, or owner if no GM online)
+    if (!ChronoballSocket.isAuthorizedExecutor(token)) {
+      console.error('Chronoball | executeSetCarrier called by unauthorized user!');
       return;
     }
 
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
-
     // Clear any existing carrier first
-    const currentCarrier = ChronoballState.getCarrierToken();
+    const currentCarrier = ChronoballState.getCarrierTokenDoc();
     if (currentCarrier) {
       await this.removeCarrierEffects(currentCarrier);
     }
@@ -30,11 +31,16 @@ export class ChronoballCarrier {
   }
 
   static async executeClearCarrier() {
-    const carrier = ChronoballState.getCarrierToken();
+    const carrier = ChronoballState.getCarrierTokenDoc();
     if (!carrier) {
-      // Token already deleted — still clear the state so carrierId doesn't point to a ghost
+      // No carrier exists, or token was deleted/not found - ensure state is cleared
       await ChronoballState.updateState({ carrierId: null });
-      ChronoballUtils.log('Chronoball | Carrier token not found, state cleared');
+      ChronoballUtils.log('Chronoball | executeClearCarrier called but no carrier exists/found, state cleared');
+      return;
+    }
+
+    if (!ChronoballSocket.isAuthorizedExecutor(carrier)) {
+      console.error('Chronoball | executeClearCarrier called by unauthorized user!');
       return;
     }
 
@@ -49,12 +55,12 @@ export class ChronoballCarrier {
     const rules = ChronoballState.getRules();
 
     // Store carrier flag on token document (this works for all users)
-    await token.document.setFlag('chronoball', 'isCarrier', true);
-    await token.document.setFlag('chronoball', 'carrierTempHP', rules.carrierTempHP || 0);
+    await token.setFlag('chronoball', 'isCarrier', true);
+    await token.setFlag('chronoball', 'carrierTempHP', rules.carrierTempHP || 0);
     // Save previous temp HP so we can restore/remove on loss of possession
     try {
       const prev = Number(token?.actor?.system?.attributes?.hp?.temp ?? 0);
-      await token.document.setFlag('chronoball', 'prevTempHP', isNaN(prev) ? 0 : prev);
+      await token.setFlag('chronoball', 'prevTempHP', isNaN(prev) ? 0 : prev);
     } catch (e) {
       console.warn('Chronoball | Could not store prevTempHP:', e);
     }
@@ -68,7 +74,7 @@ export class ChronoballCarrier {
         // 5e semantics: don't stack temp HP; replace only if higher
         const newTemp = Math.max(current, grant);
         if (!Number.isNaN(newTemp) && newTemp !== current) {
-          await actor.update({ 'system.attributes.hp.temp': newTemp });
+          await actor.update({ 'system.attributes.hp.temp': newTemp }, { chronoball_internal: true });
         }
       }
     } catch (err) {
@@ -99,19 +105,23 @@ export class ChronoballCarrier {
       .persist()
       .name(`chronoball-aura-${token.id}`);
 
-    await auraEffect.play();
+    try {
+      await auraEffect.play();
+    } catch (e) {
+      ChronoballUtils.log('Chronoball | Sequencer aura play failed (host viewing another scene?), continuing:', e);
+    }
 
     ChronoballUtils.log(`Chronoball | Sequencer aura applied to ${token.name}`);
   }
 
   static async removeCarrierEffects(token) {
     // Read flags BEFORE unsetting them
-    const grant = Number(token.document.getFlag('chronoball', 'carrierTempHP') ?? 0);
-    const prev = Number(token.document.getFlag('chronoball', 'prevTempHP') ?? 0);
+    const grant = Number(token.getFlag('chronoball', 'carrierTempHP') ?? 0);
+    const prev = Number(token.getFlag('chronoball', 'prevTempHP') ?? 0);
 
     // Remove carrier flags
-    await token.document.unsetFlag('chronoball', 'isCarrier');
-    await token.document.unsetFlag('chronoball', 'carrierTempHP');
+    await token.unsetFlag('chronoball', 'isCarrier');
+    await token.unsetFlag('chronoball', 'carrierTempHP');
 
     // Remove/restore Temp HP that were granted for carrying the ball
     try {
@@ -128,14 +138,14 @@ export class ChronoballCarrier {
           if (current <= grant) newTemp = 0;
         }
         if (newTemp !== current) {
-          await actor.update({ 'system.attributes.hp.temp': newTemp });
+          await actor.update({ 'system.attributes.hp.temp': newTemp }, { chronoball_internal: true });
         }
       }
     } catch (err) {
       console.warn('Chronoball | Could not remove/restore carrier Temp HP:', err);
     }
     // Clear helper flags
-    await token.document.unsetFlag('chronoball', 'prevTempHP');
+    await token.unsetFlag('chronoball', 'prevTempHP');
 
     // Remove Sequencer aura if it exists
     if (game.modules.get('sequencer')?.active) {

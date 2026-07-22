@@ -23,7 +23,7 @@ Chronoball is a dynamic Foundry VTT minigame module for turn-based ball competit
 
 ## Compatibility
 
-- **Foundry VTT:** v13
+- **Foundry VTT:** v14
 - **Game System:** D&D 5e (dnd5e)
 
 ## License

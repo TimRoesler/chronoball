@@ -69,6 +69,13 @@
         <p class="eyebrow">{{localize "CHRONOBALL.PlayerPanel.Actions"}}</p>
         <h3 class="card-title">{{localize "CHRONOBALL.PlayerPanel.Title"}}</h3>
       </div>
+      <div class="host-status">
+        {{#if hostOnline}}
+          <span class="pill pill-highlight">{{localize "CHRONOBALL.PlayerPanel.HostOnline" name=hostName}}</span>
+        {{else}}
+          <span class="pill pill-danger">{{localize "CHRONOBALL.PlayerPanel.HostOffline"}}</span>
+        {{/if}}
+      </div>
     </header>
 
     <div class="action-grid">

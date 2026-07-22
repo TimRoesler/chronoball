@@ -1,13 +1,24 @@
 <form class="chronoball-rules-panel-content">
   <div class="rules-section">
     <h3>{{localize "CHRONOBALL.RulesPanel.Endzones"}}</h3>
+    <p class="notes">{{localize "CHRONOBALL.RulesPanel.EndzonesHint"}}</p>
     <div class="form-group">
-      <label>{{localize "CHRONOBALL.RulesPanel.ZoneATile"}}</label>
-      <input type="text" name="zoneATileId" value="{{rules.zoneATileId}}" placeholder="Tile UUID">
+      <label>{{localize "CHRONOBALL.RulesPanel.ZoneARegion"}}</label>
+      <select name="zoneARegionId">
+        <option value="">{{localize "CHRONOBALL.RulesPanel.RegionNone"}}</option>
+        {{#each zoneAOptions}}
+          <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>
+        {{/each}}
+      </select>
     </div>
     <div class="form-group">
-      <label>{{localize "CHRONOBALL.RulesPanel.ZoneBTile"}}</label>
-      <input type="text" name="zoneBTileId" value="{{rules.zoneBTileId}}" placeholder="Tile UUID">
+      <label>{{localize "CHRONOBALL.RulesPanel.ZoneBRegion"}}</label>
+      <select name="zoneBRegionId">
+        <option value="">{{localize "CHRONOBALL.RulesPanel.RegionNone"}}</option>
+        {{#each zoneBOptions}}
+          <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>
+        {{/each}}
+      </select>
     </div>
   </div>
 
@@ -106,6 +117,20 @@
   </div>
 
   <div class="rules-section">
+    <h3>{{localize "CHRONOBALL.RulesPanel.ActivePlayerAura"}}</h3>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.ActivePlayerAuraSource"}}</label>
+      <input type="text" name="activePlayerAuraSource" value="{{rules.activePlayerAuraSource}}" placeholder="Path to image/video">
+      <p class="notes">{{localize "CHRONOBALL.RulesPanel.ActivePlayerAuraSourceHint"}}</p>
+    </div>
+    <div class="form-group">
+      <label>{{localize "CHRONOBALL.RulesPanel.ActivePlayerAuraScale"}}</label>
+      <input type="number" name="activePlayerAuraScale" value="{{rules.activePlayerAuraScale}}" min="0.1" step="0.1">
+      <p class="notes">{{localize "CHRONOBALL.RulesPanel.ActivePlayerAuraScaleHint"}}</p>
+    </div>
+  </div>
+
+  <div class="rules-section">
     <h3>{{localize "CHRONOBALL.RulesPanel.BallToken"}}</h3>
     <div class="form-group">
       <label>{{localize "CHRONOBALL.RulesPanel.BallTexture"}}</label>
@@ -159,7 +184,26 @@
           <p class="notes">{{localize "CHRONOBALL.RulesPanel.FumbleDCIncreaseHint"}}</p>
         </div>
       </div>
+    <div class="rules-section">
+      <h3>{{localize "CHRONOBALL.RulesPanel.TeamSettings"}}</h3>
+      <div class="form-group">
+        <label>{{localize "CHRONOBALL.RulesPanel.MaxPlayers"}}</label>
+        <input type="number" name="maxPlayers" value="{{rules.maxPlayers}}" min="1">
+        <p class="notes">{{localize "CHRONOBALL.RulesPanel.MaxPlayersHint"}}</p>
+      </div>
     </div>
+
+    <div class="rules-section">
+      <h3>{{localize "CHRONOBALL.RulesPanel.GameplayOptions"}}</h3>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" name="allowRollModification" {{#if rules.allowRollModification}}checked{{/if}}>
+          {{localize "CHRONOBALL.RulesPanel.AllowRollModification"}}
+        </label>
+        <p class="notes">{{localize "CHRONOBALL.RulesPanel.AllowRollModificationHint"}}</p>
+      </div>
+    </div>
+
   <div class="button-group">
     <button type="button" class="save-rules">{{localize "CHRONOBALL.RulesPanel.Save"}}</button>
     <button type="button" class="reset-rules">{{localize "CHRONOBALL.RulesPanel.Reset"}}</button>

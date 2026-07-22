@@ -456,7 +456,7 @@ export class ChronoballBall {
           // Use the D&D 5e roll dialog (DnD5e 4.1+ API)
           const config = { skill: skill, target: dc };
           const dialog = {};
-          const message = { create: false };
+          const message = { create: false, mode: CONST.DICE_ROLL_MODES.PRIVATE };
           const rolls = await actor.rollSkill(config, dialog, message);
           return rolls?.[0] || null;
         } else {

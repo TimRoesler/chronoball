@@ -95,8 +95,10 @@ export class ChronoballInterception {
     const defendingTeam = state.defendingTeam;
     
     const defenders = [];
-    
-    for (const potentialDefender of canvas.tokens.placeables) {
+
+    const matchScene = ChronoballUtils.getMatchScene();
+    const candidates = matchScene ? matchScene.tokens : [];
+    for (const potentialDefender of candidates) {
       if (potentialDefender.id === token.id) continue;
       if (!potentialDefender.actor) continue;
 
@@ -104,10 +106,15 @@ export class ChronoballInterception {
       const actorTeam = ChronoballState.getTeamAssignment(potentialDefender.actor.id);
       if (actorTeam !== defendingTeam) continue;
       
-      // Check if within radius
-      const distance = ChronoballUtils.calculateDistance(token, potentialDefender);
+      // Check if within radius using direct center-to-center distance,
+      // because grid/path measurement can overcount or behave unexpectedly
+      // for this close-range interception check.
+      const pixelDistance = ChronoballUtils.calculatePixelDistance(token, potentialDefender);
+      const gridDistance = ChronoballUtils.pixelsToGridDistance(pixelDistance);
+
+      ChronoballUtils.log(`Chronoball | Interception distance ${token.name} -> ${potentialDefender.name}: ${gridDistance} (radius ${radius})`);
       
-      if (distance <= radius) {
+      if (gridDistance <= radius) {
         defenders.push(potentialDefender);
       }
     }
@@ -488,7 +495,7 @@ export class ChronoballInterception {
     const rollFn = async () => {
       try {
         if (actor.system.abilities && actor.system.abilities[saveType]) {
-          const rolls = await actor.rollSavingThrow({ ability: saveType, target: dc }, {}, { create: false });
+          const rolls = await actor.rollSavingThrow({ ability: saveType, target: dc }, {}, { create: false, mode: CONST.DICE_ROLL_MODES.PRIVATE });
           return rolls?.[0] || null;
         } else {
           // Fallback for non-dnd5e actors

@@ -23,15 +23,11 @@ export class ChronoballState {
    * Get current match state
    */
   static getMatchState() {
-    const combat = game.combat;
-    if (!combat) {
-      const scene = canvas.scene;
-      if (!scene) return this.getDefaultMatchState();
-      const sceneState = scene.getFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE);
-      return sceneState || this.getDefaultMatchState();
-    }
-    const state = combat.getFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE);
-    return state || this.getDefaultMatchState();
+    if (this._matchState) return this._matchState;
+    const actor = this.getBallActor();
+    const actorState = actor?.getFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE);
+    this._matchState = actorState ? { ...this.getDefaultMatchState(), ...actorState } : this.getDefaultMatchState();
+    return this._matchState;
   }
   
   /**
@@ -52,7 +48,10 @@ export class ChronoballState {
       phase: 1,
       lastScoreTimestamp: 0,
       carrierDamageInRound: 0,
-      throwInProgress: false
+      throwInProgress: false,
+      turnOrder: [],
+      currentTurnIndex: -1,
+      round: 0
     };
   }
   
@@ -61,18 +60,17 @@ export class ChronoballState {
    */
   static async updateState(updates) {
     return this._stateUpdateQueue = this._stateUpdateQueue.then(async () => {
-      const combat = game.combat;
       const currentState = this.getMatchState();
       const newState = { ...currentState, ...updates };
-      if (!combat) {
-        const scene = canvas.scene;
-        if (!scene) {
-          console.warn('Chronoball | No scene found, cannot update state');
-          return currentState;
+      this._matchState = newState;
+
+      const actor = this.getBallActor();
+      if (actor) {
+        try {
+          await actor.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, newState);
+        } catch (e) {
+          ChronoballUtils.log('Chronoball | Failed to write matchState on ball actor', e);
         }
-        await scene.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, newState);
-      } else {
-        await combat.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, newState);
       }
       // Trigger HUD update for ALL clients via socket
       ChronoballSocket.emit('stateChanged', { newState });
@@ -87,12 +85,15 @@ export class ChronoballState {
    */
   static async resetState() {
     const defaultState = this.getDefaultMatchState();
-    const combat = game.combat;
-    if (combat) {
-      await combat.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, defaultState);
-    } else if (canvas.scene) {
-      await canvas.scene.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, defaultState);
+    const actor = this.getBallActor();
+    if (actor) {
+      try {
+        await actor.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, defaultState);
+      } catch (e) {
+        ChronoballUtils.log('Chronoball | Failed to reset matchState on ball actor', e);
+      }
     }
+    this._matchState = defaultState;
     ChronoballSocket.emit('stateChanged', { newState: defaultState });
     Hooks.callAll('chronoball.stateChanged', defaultState);
   }
@@ -111,13 +112,14 @@ export class ChronoballState {
    * Set team assignment for an actor
    */
   static async setTeamAssignment(actorId, team) {
-    if (!game.user.isGM) {
-      const { ChronoballSocket } = await import('./socket.js');
+    const actor = game.actors.get(actorId);
+    if (!actor) return;
+
+    const { ChronoballSocket } = await import('./socket.js');
+    if (!ChronoballSocket.isAuthorizedExecutor(actor)) {
       await ChronoballSocket.executeAsGM('setTeamAssignment', { actorId, team });
       return;
     }
-    const actor = game.actors.get(actorId);
-    if (!actor) return;
     await actor.setFlag(this.FLAG_SCOPE, this.FLAG_TEAM_ASSIGNMENT, team);
   }
 
@@ -125,13 +127,14 @@ export class ChronoballState {
    * Clear team assignment for an actor
    */
   static async clearTeamAssignment(actorId) {
-    if (!game.user.isGM) {
-      const { ChronoballSocket } = await import('./socket.js');
+    const actor = game.actors.get(actorId);
+    if (!actor) return;
+
+    const { ChronoballSocket } = await import('./socket.js');
+    if (!ChronoballSocket.isAuthorizedExecutor(actor)) {
       await ChronoballSocket.executeAsGM('clearTeamAssignment', { actorId });
       return;
     }
-    const actor = game.actors.get(actorId);
-    if (!actor) return;
     await actor.unsetFlag(this.FLAG_SCOPE, this.FLAG_TEAM_ASSIGNMENT);
   }
   
@@ -146,73 +149,99 @@ export class ChronoballState {
   }
   
   /**
+   * Get the TokenDocument for an id from the match scene (works even when the
+   * host is not viewing that scene). Use this in authoritative/host code.
+   */
+  static getMatchTokenDoc(tokenId) {
+    return ChronoballUtils.getMatchScene()?.tokens.get(tokenId) ?? null;
+  }
+
+  /**
    * Mark token as ball token
    */
   static async setBallToken(tokenId) {
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
-    
-    await token.document.setFlag(this.FLAG_SCOPE, this.FLAG_BALL_TOKEN, true);
-    
+    const tokenDoc = this.getMatchTokenDoc(tokenId);
+    if (!tokenDoc) return;
+
+    await tokenDoc.setFlag(this.FLAG_SCOPE, this.FLAG_BALL_TOKEN, true);
+
     // Update match state
     await this.updateState({ ballTokenId: tokenId });
   }
-  
+
   /**
    * Check if token is ball token
    */
   static isBallToken(tokenId) {
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return false;
-    
-    return token.document.getFlag(this.FLAG_SCOPE, this.FLAG_BALL_TOKEN) === true;
+    const tokenDoc = this.getMatchTokenDoc(tokenId);
+    if (!tokenDoc) return false;
+
+    return tokenDoc.getFlag(this.FLAG_SCOPE, this.FLAG_BALL_TOKEN) === true;
   }
-  
+
   /**
-   * Get ball token
+   * Get ball token (placeable) — for client/UI use on the viewed scene.
    */
   static getBallToken() {
     const state = this.getMatchState();
     if (!state.ballTokenId) return null;
-    
+
     return canvas.tokens.get(state.ballTokenId);
   }
-  
+
+  /**
+   * Get ball TokenDocument from the match scene — for authoritative/host use.
+   */
+  static getBallTokenDoc() {
+    const state = this.getMatchState();
+    if (!state.ballTokenId) return null;
+    return this.getMatchTokenDoc(state.ballTokenId);
+  }
+
   /**
    * Set carrier status on token
    */
   static async setCarrierStatus(tokenId, isCarrier) {
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return;
-    
-    await token.document.setFlag(this.FLAG_SCOPE, this.FLAG_CARRIER, isCarrier);
-    
+    const tokenDoc = this.getMatchTokenDoc(tokenId);
+    if (!tokenDoc) return;
+
+    await tokenDoc.setFlag(this.FLAG_SCOPE, this.FLAG_CARRIER, isCarrier);
+
     if (isCarrier) {
-      await this.updateState({ 
+      await this.updateState({
         carrierId: tokenId,
         carrierDamageInRound: 0
       });
     }
   }
-  
+
   /**
    * Check if token is carrier
    */
   static isCarrier(tokenId) {
-    const token = canvas.tokens.get(tokenId);
-    if (!token) return false;
-    
-    return token.document.getFlag(this.FLAG_SCOPE, this.FLAG_CARRIER) === true;
+    const tokenDoc = this.getMatchTokenDoc(tokenId);
+    if (!tokenDoc) return false;
+
+    return tokenDoc.getFlag(this.FLAG_SCOPE, this.FLAG_CARRIER) === true;
   }
-  
+
   /**
-   * Get carrier token
+   * Get carrier token (placeable) — for client/UI use on the viewed scene.
    */
   static getCarrierToken() {
     const state = this.getMatchState();
     if (!state.carrierId) return null;
-    
+
     return canvas.tokens.get(state.carrierId);
+  }
+
+  /**
+   * Get carrier TokenDocument from the match scene — for authoritative/host use.
+   */
+  static getCarrierTokenDoc() {
+    const state = this.getMatchState();
+    if (!state.carrierId) return null;
+    return this.getMatchTokenDoc(state.carrierId);
   }
 
   /**
@@ -255,17 +284,17 @@ export class ChronoballState {
     const rules = this.getRules();
     
     // Determine own endzone based on attacking team
-    const ownEndzoneId = state.attackingTeam === 'A' ? rules.zoneATileId : rules.zoneBTileId;
-    
+    const ownEndzoneId = state.attackingTeam === 'A' ? rules.zoneARegionId : rules.zoneBRegionId;
+
     if (!ownEndzoneId) {
       // No endzone configured, deduct movement normally
       await this.deductMoveDistance(feetDistance);
       return;
     }
-    
+
     // Check if start and end positions are in own endzone (using token center)
-    const wasInOwnEndzone = this.isTokenCenterInTile(tokenDoc, oldX, oldY, ownEndzoneId);
-    const isInOwnEndzone = this.isTokenCenterInTile(tokenDoc, newX, newY, ownEndzoneId);
+    const wasInOwnEndzone = this.isTokenCenterInRegion(tokenDoc, oldX, oldY, ownEndzoneId);
+    const isInOwnEndzone = this.isTokenCenterInRegion(tokenDoc, newX, newY, ownEndzoneId);
     
     if (wasInOwnEndzone && isInOwnEndzone) {
       // Both positions in own endzone - NO movement deducted
@@ -277,29 +306,30 @@ export class ChronoballState {
     }
   }
 
-  static isTokenCenterInTile(tokenDoc, x, y, tileId) {
-    if (!tileId) return false;
+  /**
+   * Resolve an endzone Region on a scene by id (preferred) or name.
+   * @returns {RegionDocument|null}
+   */
+  static getZoneRegion(regionId, scene = ChronoballUtils.getMatchScene()) {
+    if (!regionId || !scene) return null;
+    const idOnly = regionId.includes('.') ? regionId.split('.').pop() : regionId;
+    return scene.regions.get(idOnly) ?? scene.regions.getName(regionId) ?? null;
+  }
 
-    const tileIdOnly = tileId.includes('.') ? tileId.split('.').pop() : tileId;
-    const tile = canvas.tiles.get(tileIdOnly);
-    
-    // Use the scene's grid size for safety, canvas global might be unreliable.
-    const gridSize = canvas.scene.grid.size;
-    if (!tile || !gridSize) return false;
+  /**
+   * Test whether a token's center (at the given top-left x/y) lies inside an
+   * endzone Region. Uses RegionDocument#testPoint, which is pure geometry over
+   * the region's shapes and therefore works even when the host views another scene.
+   */
+  static isTokenCenterInRegion(tokenDoc, x, y, regionId, scene = ChronoballUtils.getMatchScene()) {
+    const region = this.getZoneRegion(regionId, scene);
+    const gridSize = scene?.grid.size;
+    if (!region || !gridSize) return false;
 
-    const tokenWidthInPixels = tokenDoc.width * gridSize;
-    const tokenHeightInPixels = tokenDoc.height * gridSize;
-    const centerX = x + tokenWidthInPixels / 2;
-    const centerY = y + tokenHeightInPixels / 2;
+    const centerX = x + (tokenDoc.width * gridSize) / 2;
+    const centerY = y + (tokenDoc.height * gridSize) / 2;
 
-    const tileBounds = tile.bounds;
-    
-    return (
-      centerX >= tileBounds.x &&
-      centerX <= tileBounds.x + tileBounds.width &&
-      centerY >= tileBounds.y &&
-      centerY <= tileBounds.y + tileBounds.height
-    );
+    return region.testPoint({ x: centerX, y: centerY, elevation: tokenDoc.elevation ?? 0 });
   }
   
   /**
@@ -324,11 +354,9 @@ export class ChronoballState {
    * Get rules configuration
    */
   static getRules() {
-    const scene = canvas.scene;
-    if (!scene) return this.getDefaultRules();
-    
-    const rules = scene.getFlag(this.FLAG_SCOPE, 'rules');
-    return rules || this.getDefaultRules();
+    const actor = this.getBallActor();
+    const rules = actor?.getFlag(this.FLAG_SCOPE, 'rules');
+    return rules ? { ...this.getDefaultRules(), ...rules } : this.getDefaultRules();
   }
 
   /**
@@ -336,7 +364,9 @@ export class ChronoballState {
    */
   static isMatchActiveOnCurrentScene() {
     if (!canvas.scene) return false;
-    return !!canvas.scene.getFlag(this.FLAG_SCOPE, 'matchActive');
+    const actor = this.getBallActor();
+    const activeSceneId = actor?.getFlag(this.FLAG_SCOPE, 'matchActiveSceneId');
+    return activeSceneId === canvas.scene.id;
   }
 
   /**
@@ -344,8 +374,8 @@ export class ChronoballState {
    */
   static getDefaultRules() {
     return {
-      zoneATileId: '',
-      zoneBTileId: '',
+      zoneARegionId: '',
+      zoneBRegionId: '',
       ballMove: 0,
       ballThrow: 0,
       legacyTotal: 90,
@@ -360,6 +390,10 @@ export class ChronoballState {
       carrierTempHP: 10,
       carrierAuraSource: '',
       carrierAuraScale: 1.5,
+      activePlayerAuraSource: '',
+      activePlayerAuraScale: 1.5,
+      allowRollModification: true,
+      maxPlayers: 3,
       ballTexture: 'icons/svg/mystery-man.svg',
       ballScale: 1.0,
       scoreRunIn: 2,
@@ -367,7 +401,7 @@ export class ChronoballState {
       scorePassInZone: 2,
       fumbleStartDC: 10,
       fumbleDamageThreshold: 10,
-      fumbleDCIncrease: 2 // New setting for configurable fumble DC increase
+      fumbleDCIncrease: 2
     };
   }
   
@@ -375,29 +409,59 @@ export class ChronoballState {
    * Update rules configuration
    */
   static async updateRules(updates) {
-    const scene = canvas.scene;
-    if (!scene) return;
-    
+    const actor = this.getBallActor();
+    if (!actor) return;
+
+    const { ChronoballSocket } = await import('./socket.js');
+    if (!ChronoballSocket.isAuthorizedExecutor(actor)) {
+      await ChronoballSocket.executeAsGM('updateRules', { updates });
+      return;
+    }
+
     const currentRules = this.getRules();
     const newRules = { ...currentRules, ...updates };
-    
-    await scene.setFlag(this.FLAG_SCOPE, 'rules', newRules);
+
+    await actor.setFlag(this.FLAG_SCOPE, 'rules', newRules);
+
+    // If maxPlayers changed, rebuild the turn order!
+    if (updates.maxPlayers !== undefined && updates.maxPlayers !== currentRules.maxPlayers) {
+      const { ChronoballRoster } = await import('./roster.js');
+      await ChronoballRoster.rebuildTurnOrder();
+    }
   }
   
   /**
-   * Handle combat turn change
+   * Advance to the next turn in the custom turn order
    */
-  static async onCombatTurnChange(combat) {
-    // Only primary GM should update state to avoid duplicate updates with multiple GMs
+  static async nextTurn() {
+    // Only primary GM/Host should update state to avoid duplicate updates
     if (!ChronoballSocket.isPrimaryGM()) {
-      ChronoballUtils.log('Chronoball | Not primary GM, skipping state update');
+      ChronoballUtils.log('Chronoball | Not primary GM/Host, skipping turn advance');
       return;
     }
-    
-    // GM resets turn distances for new turn
+
+    const state = this.getMatchState();
+    if (!state.turnOrder || state.turnOrder.length === 0) return;
+
+    const nextIndex = (state.currentTurnIndex + 1) % state.turnOrder.length;
+    const isNewRound = nextIndex === 0;
+    const newRound = isNewRound ? (state.round || 1) + 1 : (state.round || 1);
+
+    ChronoballUtils.log(`Chronoball | Advancing turn to index ${nextIndex}, round ${newRound}`);
+
+    // Reset carrier damage for the new round
+    const roundUpdates = isNewRound ? { carrierDamageInRound: 0 } : {};
+
+    await this.updateState({
+      currentTurnIndex: nextIndex,
+      round: newRound,
+      ...roundUpdates
+    });
+
+    // Reset turn distances for the new turn
     await this.resetTurnDistances();
-    
-    ChronoballUtils.log('Chronoball | Turn changed, distances reset (GM), HUD updated for all clients');
+
+    ChronoballUtils.log('Chronoball | Turn advanced, distances reset (GM/Host), HUD updated for all clients');
   }
   
   /**
@@ -409,14 +473,13 @@ export class ChronoballState {
 
     // Validate endzones BEFORE mutating state to avoid inconsistent game state
     const newAttacking = state.attackingTeam === 'A' ? 'B' : 'A';
-    const spawnZoneId = newAttacking === 'A' ? rules.zoneATileId : rules.zoneBTileId;
+    const spawnZoneId = newAttacking === 'A' ? rules.zoneARegionId : rules.zoneBRegionId;
     if (!spawnZoneId) {
       ui.notifications.error('Cannot end phase: Endzone for new attacking team not configured');
       return;
     }
-    const zoneIdOnly = spawnZoneId.split('.').pop();
-    if (!canvas.tiles.get(zoneIdOnly)) {
-      ui.notifications.error('Cannot end phase: Zone tile not found on canvas');
+    if (!this.getZoneRegion(spawnZoneId)) {
+      ui.notifications.error('Cannot end phase: Endzone region not found on scene');
       return;
     }
 
@@ -424,29 +487,30 @@ export class ChronoballState {
     const { ChronoballCarrier } = await import('./carrier.js');
     await ChronoballCarrier.executeClearCarrier();
 
-    // Switch attacking/defending teams
     const newDefending = state.defendingTeam === 'A' ? 'B' : 'A';
-
+    const limits = this.getMovementLimits();
     await this.updateState({
       attackingTeam: newAttacking,
       defendingTeam: newDefending,
       phase: state.phase + 1,
-      carrierId: null
+      carrierId: null,
+      remainingMove: limits.move,
+      remainingThrow: limits.throw
     });
     
     // Delete old ball token if exists
-    const oldBall = this.getBallToken();
+    const oldBall = this.getBallTokenDoc();
     if (oldBall) {
-      await oldBall.document.delete();
+      await oldBall.delete();
       await this.updateState({ ballTokenId: null });
     }
     
     // Spawn ball in NEW attacking team's zone
     await this.spawnBallInAttackingZone();
     
-    // Reroll initiative after every phase change — attacking team gets first turn
+    // Rebuild turn order after every phase change — attacking team gets first turn
     const ChronoballRoster = (await import('./roster.js')).ChronoballRoster;
-    await ChronoballRoster.rebuildInitiative();
+    await ChronoballRoster.rebuildTurnOrder();
     
     ChronoballUtils.log('Chronoball | Phase ended, teams switched, ball spawned in new attacking zone');
   }
@@ -459,29 +523,29 @@ export class ChronoballState {
     const rules = this.getRules();
     
     // Determine which zone to spawn ball in based on attacking team
-    const spawnZoneId = state.attackingTeam === 'A' ? rules.zoneATileId : rules.zoneBTileId;
-    
+    const spawnZoneId = state.attackingTeam === 'A' ? rules.zoneARegionId : rules.zoneBRegionId;
+
     if (!spawnZoneId) {
       ui.notifications.error('Cannot spawn ball: Endzone not configured');
       return;
     }
-    
-    // Extract Tile ID from UUID
-    const zoneIdOnly = spawnZoneId.split('.').pop();
-    const zoneTile = canvas.tiles.get(zoneIdOnly);
-    
-    if (!zoneTile) {
-      ui.notifications.error('Cannot spawn ball: Zone tile not found');
+
+    // Resolve the endzone Region and use its bounds center
+    const matchScene = ChronoballUtils.getMatchScene();
+    const zoneRegion = this.getZoneRegion(spawnZoneId, matchScene);
+
+    if (!zoneRegion) {
+      ui.notifications.error('Cannot spawn ball: Endzone region not found');
       return;
     }
-    
-    // Calculate center of zone
-    const bounds = zoneTile.bounds;
+
+    // Calculate center of zone from the region bounds
+    const bounds = zoneRegion.bounds;
     const centerX = bounds.x + (bounds.width / 2);
     const centerY = bounds.y + (bounds.height / 2);
-    
+
     // Adjust for token size
-    const gridSize = canvas.grid.size;
+    const gridSize = matchScene.grid.size;
     const tokenX = centerX - (gridSize / 2);
     const tokenY = centerY - (gridSize / 2);
     
@@ -508,8 +572,8 @@ export class ChronoballState {
       lockRotation: true
     });
     
-    const [createdToken] = await canvas.scene.createEmbeddedDocuments('Token', [tokenData]);
-    
+    const [createdToken] = await matchScene.createEmbeddedDocuments('Token', [tokenData]);
+
     if (createdToken) {
       await this.setBallToken(createdToken.id);
       const teamName = state.attackingTeam === 'A' ? state.teamAName : state.teamBName;
@@ -517,77 +581,48 @@ export class ChronoballState {
     }
   }
   
-  /**
-   * Ensure combat exists for current scene
-   */
-  static async ensureCombat() {
-    if (game.combat && game.combat.scene.id === canvas.scene.id) {
-      return game.combat;
-    }
-    
-    // Capture existing state (from scene or defaults) BEFORE creating combat,
-    // so we can migrate names/scores/etc. and avoid resetting to Team A/B.
-    const prevState = this.getMatchState();
-    
-    // Create new combat
-    const combat = await Combat.create({
-      scene: canvas.scene.id,
-      active: true
-    });
-    
-    await combat.activate();
-    
-    // Migrate previous state into the new combat flags
+  // ensureCombat removed (bypassed combat tracker)
+
+  static getBallActor() {
+    let actorId = '';
     try {
-      await combat.setFlag(this.FLAG_SCOPE, this.FLAG_MATCH_STATE, prevState);
-      ChronoballSocket.emit('stateChanged', { newState: prevState });
-      Hooks.callAll('chronoball.stateChanged', prevState);
-      ChronoballUtils.log('Chronoball | Migrated scene match state into new combat');
+      actorId = game.settings.get('chronoball', 'ballActorId');
     } catch (e) {
-      console.error('Chronoball | Failed to migrate match state into combat', e);
+      actorId = '';
     }
-    
-    return combat;
+
+    let ballActor = actorId ? game.actors.get(actorId) : null;
+    if (ballActor) return ballActor;
+
+    ballActor = game.actors.find(a => a.name === 'Chronoball');
+    return ballActor || null;
   }
 
   /**
-   * Find or create the actor used for the Chronoball token.
-   * @returns {Actor|null}
+   * Get or create the Chronoball actor
    */
   static async getOrCreateBallActor() {
-    const settingKey = 'ballActorId';
-    let actorId = game.settings.get(this.FLAG_SCOPE, settingKey);
-    let ballActor = game.actors.get(actorId);
+    let ballActor = this.getBallActor();
+    if (ballActor) return ballActor;
 
-    // 1. Try to find actor from setting
-    if (ballActor) {
-      return ballActor;
-    }
-
-    // 2. Try to find actor by name
-    ballActor = game.actors.find(a => a.name === 'Chronoball');
-    if (ballActor) {
-      await game.settings.set(this.FLAG_SCOPE, settingKey, ballActor.id);
-      return ballActor;
-    }
-
-    // 3. If not found, create it
+    // If not found, create it
     try {
       ballActor = await Actor.create({
         name: 'Chronoball',
-        type: 'character', // Assuming a 'character' type actor
+        type: 'character',
         img: 'icons/svg/item-bag.svg'
       });
       if (ballActor) {
-        await game.settings.set(this.FLAG_SCOPE, settingKey, ballActor.id);
+        try {
+          if (game.user.isGM) {
+            await game.settings.set('chronoball', 'ballActorId', ballActor.id);
+          }
+        } catch (e) {}
         return ballActor;
       }
     } catch (e) {
-      console.error("Chronoball | Failed to create ball actor", e);
-      ui.notifications.error("Failed to create the Chronoball actor.");
-      return null;
+      console.error('Chronoball | Failed to create Chronoball actor:', e);
     }
-    
     return null;
   }
 

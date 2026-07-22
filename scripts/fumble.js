@@ -21,14 +21,16 @@ export class ChronoballFumble {
    * @param {number} damageTaken The amount of damage taken.
    */
   static async handleDamage(carrierActor, damageTaken) {
-    if (!game.user.isGM) return;
+    if (!ChronoballSocket.isAuthorizedExecutor(carrierActor)) return;
     ChronoballUtils.log(`Chronoball | [GM] handleDamage entered for ${carrierActor.name} with ${damageTaken} damage.`);
 
     const state = ChronoballState.getMatchState();
     const rules = ChronoballState.getRules();
-    const carrierToken = carrierActor.getActiveTokens().find(t => ChronoballState.isCarrier(t.id));
+    // Use the known carrier TokenDocument (scene-independent) rather than active
+    // canvas tokens, so this works even when the host views another scene.
+    const carrierToken = ChronoballState.getCarrierTokenDoc();
 
-    if (!carrierToken) return;
+    if (!carrierToken || carrierToken.actor?.id !== carrierActor.id) return;
 
     const oldDamage = state.carrierDamageInRound || 0;
     const newDamage = oldDamage + damageTaken;
@@ -103,7 +105,7 @@ export class ChronoballFumble {
         const rolls = await actor.rollSavingThrow(
           { ability: saveType, target: dc },
           {},
-          { create: false }
+          { create: false, mode: CONST.DICE_ROLL_MODES.PRIVATE }
         );
         return rolls?.[0] || null;
       } catch (error) {

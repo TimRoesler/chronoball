@@ -3,12 +3,13 @@
  */
 
 import { ChronoballState } from './state.js';
+import { ChronoballSocket } from './socket.js';
 import { ChronoballChat } from './chat.js';
-import { START_INITIATIVE } from './utils.js';
+import { ChronoballUtils, START_INITIATIVE } from './utils.js';
 
 export class ChronoballRoster {
   static get MAX_PLAYERS_PER_TEAM() {
-    return game.settings.get('chronoball', 'maxPlayers') || 3;
+    return ChronoballState.getRules().maxPlayers || 3;
   }
   
   static initialize() {
@@ -18,47 +19,46 @@ export class ChronoballRoster {
   /**
    * Determine teams from endzone tiles
    */
-  static async determineTeamsFromEndzones() {
+  static async determineTeamsFromEndzones(sceneId) {
     const rules = ChronoballState.getRules();
-    
+    const matchScene = ChronoballUtils.getMatchScene(sceneId);
+
     console.log('Chronoball | Rules:', rules);
-    console.log('Chronoball | Zone A:', rules.zoneATileId);
-    console.log('Chronoball | Zone B:', rules.zoneBTileId);
-    
-    if (!rules.zoneATileId || !rules.zoneBTileId) {
+    console.log('Chronoball | Zone A:', rules.zoneARegionId);
+    console.log('Chronoball | Zone B:', rules.zoneBRegionId);
+
+    if (!rules.zoneARegionId || !rules.zoneBRegionId) {
       ui.notifications.error(game.i18n.localize('CHRONOBALL.Errors.NoEndzones'));
       return;
     }
-    
-    // Extract Tile ID from UUID (format: Scene.xxx.Tile.yyy)
-    const zoneATileIdOnly = rules.zoneATileId.split('.').pop();
-    const zoneBTileIdOnly = rules.zoneBTileId.split('.').pop();
-    
-    const zoneATile = canvas.tiles.get(zoneATileIdOnly);
-    const zoneBTile = canvas.tiles.get(zoneBTileIdOnly);
-    
-    console.log('Chronoball | Zone A Tile ID:', zoneATileIdOnly, 'Tile:', zoneATile);
-    console.log('Chronoball | Zone B Tile ID:', zoneBTileIdOnly, 'Tile:', zoneBTile);
-    
-    if (!zoneATile || !zoneBTile) {
+
+    // Resolve endzone Regions on the match scene
+    const zoneARegion = ChronoballState.getZoneRegion(rules.zoneARegionId, matchScene);
+    const zoneBRegion = ChronoballState.getZoneRegion(rules.zoneBRegionId, matchScene);
+
+    console.log('Chronoball | Zone A Region:', zoneARegion);
+    console.log('Chronoball | Zone B Region:', zoneBRegion);
+
+    if (!zoneARegion || !zoneBRegion) {
       ui.notifications.error(game.i18n.localize('CHRONOBALL.Errors.NoEndzones'));
       return;
     }
-    
+
     const teamA = [];
     const teamB = [];
-    
-    // Find tokens in each zone
-    for (const token of canvas.tokens.placeables) {
-      if (ChronoballState.isTokenCenterInTile(token.document, token.x, token.y, rules.zoneATileId)) {
+
+    // Find tokens (documents) in each zone on the match scene
+    for (const tokenDoc of matchScene.tokens) {
+      if (!tokenDoc.actor) continue;
+      if (ChronoballState.isTokenCenterInRegion(tokenDoc, tokenDoc.x, tokenDoc.y, rules.zoneARegionId, matchScene)) {
         if (teamA.length < this.MAX_PLAYERS_PER_TEAM) {
-          teamA.push(token.actor.id);
-          await ChronoballState.setTeamAssignment(token.actor.id, 'A');
+          teamA.push(tokenDoc.actor.id);
+          await ChronoballState.setTeamAssignment(tokenDoc.actor.id, 'A');
         }
-      } else if (ChronoballState.isTokenCenterInTile(token.document, token.x, token.y, rules.zoneBTileId)) {
+      } else if (ChronoballState.isTokenCenterInRegion(tokenDoc, tokenDoc.x, tokenDoc.y, rules.zoneBRegionId, matchScene)) {
         if (teamB.length < this.MAX_PLAYERS_PER_TEAM) {
-          teamB.push(token.actor.id);
-          await ChronoballState.setTeamAssignment(token.actor.id, 'B');
+          teamB.push(tokenDoc.actor.id);
+          await ChronoballState.setTeamAssignment(tokenDoc.actor.id, 'B');
         }
       }
     }
@@ -82,15 +82,13 @@ export class ChronoballRoster {
   }
   
   /**
-   * Rebuild initiative order (alternating teams with rolled initiative)
+   * Rebuild custom turn order (alternating teams)
    * Attacking team goes first, then defending team alternates
    */
-  static async rebuildInitiative() {
-    await ChronoballState.ensureCombat();
-    
-    const combat = game.combat;
-    if (!combat) return;
-    
+  static async rebuildTurnOrder() {
+    const matchScene = ChronoballUtils.getMatchScene();
+    if (!matchScene) return;
+
     const state = ChronoballState.getMatchState();
     const teamA = this.getTeamRoster('A');
     const teamB = this.getTeamRoster('B');
@@ -100,116 +98,46 @@ export class ChronoballRoster {
     const attackingRoster = attackingTeam === 'A' ? teamA : teamB;
     const defendingRoster = attackingTeam === 'A' ? teamB : teamA;
     
-    // Clear existing combatants
-    const combatantIds = combat.combatants.map(c => c.id);
-    await combat.deleteEmbeddedDocuments('Combatant', combatantIds);
+    const attackingTokens = [];
+    const defendingTokens = [];
     
-    // Create combatants with temporary initiative
-    const combatants = [];
-    
-    // Add attacking team
     for (const actor of attackingRoster) {
-      const token = canvas.tokens.placeables.find(t => t.actor.id === actor.id);
-      if (token) {
-        combatants.push({
-          tokenId: token.id,
-          sceneId: canvas.scene.id,
-          actorId: actor.id,
-          initiative: null // Will be rolled
-        });
-      }
+      const tokenDoc = matchScene.tokens.find(t => t.actor?.id === actor.id);
+      if (tokenDoc) attackingTokens.push(tokenDoc.id);
     }
-    
-    // Add defending team
+
     for (const actor of defendingRoster) {
-      const token = canvas.tokens.placeables.find(t => t.actor.id === actor.id);
-      if (token) {
-        combatants.push({
-          tokenId: token.id,
-          sceneId: canvas.scene.id,
-          actorId: actor.id,
-          initiative: null // Will be rolled
-        });
-      }
+      const tokenDoc = matchScene.tokens.find(t => t.actor?.id === actor.id);
+      if (tokenDoc) defendingTokens.push(tokenDoc.id);
     }
-    
-    await combat.createEmbeddedDocuments('Combatant', combatants);
-    
-    // Roll initiative for all combatants
-    await combat.rollAll();
-    
-    // Now sort and rebuild with alternating pattern
-    const combatantDocs = combat.combatants.contents;
-    
-    // Separate by team and sort by initiative (highest first)
-    const attackingCombatants = combatantDocs
-      .filter(c => {
-        const actor = game.actors.get(c.actorId);
-        const team = ChronoballState.getTeamAssignment(actor.id);
-        return team === attackingTeam;
-      })
-      .sort((a, b) => b.initiative - a.initiative);
-    
-    const defendingCombatants = combatantDocs
-      .filter(c => {
-        const actor = game.actors.get(c.actorId);
-        const team = ChronoballState.getTeamAssignment(actor.id);
-        return team !== attackingTeam;
-      })
-      .sort((a, b) => b.initiative - a.initiative);
-    
+
     // Rebuild with alternating pattern: Attacker, Defender, Attacker, Defender...
-    const newInitiatives = [];
-    const maxLength = Math.max(attackingCombatants.length, defendingCombatants.length);
-    
-    let currentInit = START_INITIATIVE;
+    const turnOrder = [];
+    const maxLength = Math.max(attackingTokens.length, defendingTokens.length);
     for (let i = 0; i < maxLength; i++) {
-      // Attacker goes first
-      if (i < attackingCombatants.length) {
-        newInitiatives.push({
-          id: attackingCombatants[i].id,
-          initiative: currentInit--
-        });
-      }
-      
-      // Then defender
-      if (i < defendingCombatants.length) {
-        newInitiatives.push({
-          id: defendingCombatants[i].id,
-          initiative: currentInit--
-        });
-      }
+      if (i < attackingTokens.length) turnOrder.push(attackingTokens[i]);
+      if (i < defendingTokens.length) turnOrder.push(defendingTokens[i]);
     }
     
-    // Update all combatant initiatives
-    for (const update of newInitiatives) {
-      await combat.updateEmbeddedDocuments('Combatant', [{
-        _id: update.id,
-        initiative: update.initiative
-      }]);
-    }
-    
-    // Start combat if not started
-    if (!combat.started) {
-      await combat.startCombat();
-    } else {
-      // Reset to first combatant
-      await combat.update({ turn: 0 });
-    }
-    
+    await ChronoballState.updateState({
+      turnOrder: turnOrder,
+      currentTurnIndex: turnOrder.length > 0 ? 0 : -1,
+      round: 1
+    });
+
     const attackingTeamName = attackingTeam === 'A' ? state.teamAName : state.teamBName;
-    ui.notifications.info(`Initiative rolled! ${attackingTeamName} (attacking) goes first.`);
+    ui.notifications.info(`Turn order established! ${attackingTeamName} (attacking) goes first.`);
     
-    console.log('Chronoball | Initiative rebuilt with rolled values, alternating pattern');
+    console.log('Chronoball | Turn order rebuilt with alternating pattern');
   }
   
   /**
    * Heal all rosters
    */
   static async healAllRosters() {
-    // Only GM can heal
-    if (!game.user.isGM) {
-      ui.notifications.error('Only GM can heal rosters');
+    // Only GM/Host can heal
+    if (!ChronoballSocket.isPrimaryGM()) {
+      ui.notifications.error('Only the Host can heal rosters');
       return;
     }
     
@@ -233,9 +161,9 @@ export class ChronoballRoster {
    * Clear all buffs and effects from rosters
    */
   static async clearAllEffects() {
-    // Only GM can clear effects
-    if (!game.user.isGM) {
-      ui.notifications.error('Only GM can clear effects');
+    // Only GM/Host can clear effects
+    if (!ChronoballSocket.isPrimaryGM()) {
+      ui.notifications.error('Only the Host can clear effects');
       return;
     }
     
@@ -291,28 +219,31 @@ export class ChronoballRoster {
   /**
    * Handle token deletion
    */
-/**
- * Handle token deletion
- */
-static async onTokenDeleted(tokenDoc) {
-  const actorId = tokenDoc.actorId;
-  if (!actorId) return;
+  static async onTokenDeleted(tokenDoc) {
+    if (tokenDoc.getFlag?.('monster-summoner', 'temp')) return;
 
-  // Ignore deletion of the Chronoball (ball) token
-  try {
-    const { ChronoballState } = await import('./state.js');
-    if (ChronoballState.isBallToken(tokenDoc.id)) return;
-  } catch (e) {
-    if ((tokenDoc.name || '').toLowerCase().includes('chronoball')) return;
+    const actorId = tokenDoc.actorId;
+    if (!actorId) return;
+
+    // Ignore deletion of the Chronoball (ball) token
+    if (
+      tokenDoc.getFlag?.(ChronoballState.FLAG_SCOPE, ChronoballState.FLAG_BALL_TOKEN) === true
+      || ChronoballState.isBallToken(tokenDoc.id)
+      || (tokenDoc.name || '').toLowerCase().includes('chronoball')
+    ) return;
+
+    if (!ChronoballState.getTeamAssignment(actorId)) return;
+
+    // Clear team assignment if this was the last token for this actor.
+    // Use the deleted token's own scene (tokenDoc.parent) so this is correct
+    // regardless of which scene any client is currently viewing.
+    const sceneTokens = tokenDoc.parent?.tokens ?? [];
+    const remainingTokens = sceneTokens.filter(t => t.actor?.id === actorId);
+    if (remainingTokens.length === 0) {
+      await ChronoballState.clearTeamAssignment(actorId);
+    }
   }
 
-  // Clear team assignment if this was the last token for this actor
-  const remainingTokens = canvas.tokens.placeables.filter(t => t.actor?.id === actorId);
-  if (remainingTokens.length === 0) {
-    const { ChronoballState } = await import('./state.js');
-    await ChronoballState.clearTeamAssignment(actorId);
-  }
-}
   /**
    * Get roster display data
    */

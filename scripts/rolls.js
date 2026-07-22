@@ -3,6 +3,7 @@
  */
 
 import { ChronoballUtils } from './utils.js';
+import { ChronoballState } from './state.js';
 
 export class ChronoballRolls {
   /**
@@ -26,7 +27,8 @@ export class ChronoballRolls {
     let modOriginalTotal = null;
     let modRerollTotal = null;
 
-    if (game.settings.get('chronoball', 'allowRollModification')) {
+    const rules = ChronoballState.getRules();
+    if (rules.allowRollModification) {
       const modification = await ChronoballUtils.askForRollModification(roll, dc, title);
 
       if (modification.cancelled) return null;
